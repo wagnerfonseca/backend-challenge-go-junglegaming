@@ -167,7 +167,16 @@ type WalletView struct {
 // PENDING_REFERENCE, so no terminal balance is reported before resolution.
 type WagerResult struct {
 	TransactionID     financial.TransactionID
+	Origin            financial.Origin
 	Kind              financial.Kind
+	ProviderID        financial.ProviderID
+	ExternalID        financial.ExternalID
+	WalletID          financial.WalletID
+	PlayerID          financial.PlayerID
+	RoundID           financial.ExternalID
+	GameID            financial.ExternalID
+	Amount            money.Money
+	ReferenceExternal financial.ExternalID
 	State             financial.State
 	ObservedBalance   money.Money
 	FailureCode       financial.FailureCode

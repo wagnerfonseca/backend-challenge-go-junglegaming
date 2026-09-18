@@ -114,6 +114,64 @@ func TestSQSEnvelopeValidation(t *testing.T) {
 	}
 }
 
+// C111 - SQS ingress maps the SenderId to one configured provider and
+// requires equality with data.providerId before the financial use case.
+func TestSQSSenderIdAuthorization(t *testing.T) {
+	h := newHarness(t)
+	view := h.openWallet("100.00")
+
+	t.Run("matching sender is processed", func(t *testing.T) {
+		command := h.command(view, financial.KindBet, "10.00")
+		messageID := "sender-match-" + newCorrelation()
+		broker := &sqsFake{}
+		broker.enqueue(sqsMessage(messageID, "sender-a", 1, envelopeJSON(t, envelopeFor(t, command, messageID))))
+		if err := newConsumer(h, broker).PollOnce(context.Background()); err != nil {
+			t.Fatalf("consumer pass: %v", err)
+		}
+		if handles := broker.deletedHandles(); len(handles) != 1 {
+			t.Errorf("matching sender was not acknowledged: %v", handles)
+		}
+		if !h.transactionExists("provider-a", command.ExternalTransactionID) {
+			t.Error("matching sender did not persist its transaction")
+		}
+	})
+
+	t.Run("unknown sender is abandoned", func(t *testing.T) {
+		command := h.command(view, financial.KindBet, "10.00")
+		messageID := "sender-unknown-" + newCorrelation()
+		broker := &sqsFake{}
+		broker.enqueue(sqsMessage(messageID, "sender-unknown", 1, envelopeJSON(t, envelopeFor(t, command, messageID))))
+		if err := newConsumer(h, broker).PollOnce(context.Background()); err != nil {
+			t.Fatalf("consumer pass: %v", err)
+		}
+		if handles := broker.deletedHandles(); len(handles) != 0 {
+			t.Errorf("unknown sender was acknowledged: %v", handles)
+		}
+		if h.transactionExists("provider-a", command.ExternalTransactionID) {
+			t.Error("unknown sender persisted a transaction")
+		}
+	})
+
+	t.Run("sender mapped to another provider is abandoned", func(t *testing.T) {
+		command := h.command(view, financial.KindBet, "10.00")
+		messageID := "sender-mismatch-" + newCorrelation()
+		broker := &sqsFake{}
+		broker.enqueue(sqsMessage(messageID, "sender-b", 1, envelopeJSON(t, envelopeFor(t, command, messageID))))
+		if err := newConsumer(h, broker).PollOnce(context.Background()); err != nil {
+			t.Fatalf("consumer pass: %v", err)
+		}
+		if handles := broker.deletedHandles(); len(handles) != 0 {
+			t.Errorf("mismatched sender was acknowledged: %v", handles)
+		}
+		if h.transactionExists("provider-a", command.ExternalTransactionID) {
+			t.Error("mismatched sender persisted a transaction")
+		}
+		if changes := broker.visibilityChanges(); len(changes) == 0 || changes[len(changes)-1].Timeout != 0 {
+			t.Errorf("mismatched sender was not left for redrive: %v", changes)
+		}
+	})
+}
+
 // C129 - HTTP and SQS invoke the same financial use case with the same
 // canonical business projection.
 func TestHTTPAndSQSConvergence(t *testing.T) {

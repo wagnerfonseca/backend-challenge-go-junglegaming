@@ -99,19 +99,32 @@ func (h *Handler) Routes() http.Handler {
 	protected := func(scope string, next http.Handler) http.Handler {
 		return middleware.Authenticate(h.authenticator)(middleware.RequireScope(scope)(next))
 	}
+	internal := func(scope string, next http.Handler) http.Handler {
+		return middleware.Authenticate(h.authenticator)(middleware.RequireInternal(middleware.RequireScope(scope)(next)))
+	}
+	provider := func(scope string, next http.Handler) http.Handler {
+		return middleware.Authenticate(h.authenticator)(middleware.RequireProvider(middleware.RequireScope(scope)(next)))
+	}
 	business := func(scope string, next http.Handler) http.Handler {
 		return protected(scope,
 			middleware.RateLimit(h.concurrency)(
 				middleware.MaxBytes(h.maxBodyBytes)(
 					middleware.RequireJSON(next))))
 	}
+	internalBusiness := func(scope string, next http.Handler) http.Handler {
+		return internal(scope,
+			middleware.RateLimit(h.concurrency)(
+				middleware.MaxBytes(h.maxBodyBytes)(
+					middleware.RequireJSON(next))))
+	}
 	mux.Handle("GET /health/live", base(http.HandlerFunc(h.handleLive)))
 	mux.Handle("GET /health/ready", base(http.HandlerFunc(h.handleReady)))
-	mux.Handle("GET /metrics", base(protected(middleware.ScopeMetricsRead, http.HandlerFunc(h.handleMetrics))))
-	mux.Handle("POST /wallets", base(business(middleware.ScopeWalletsWrite, http.HandlerFunc(h.handleOpenWallet))))
-	mux.Handle("POST /wagering/transactions", base(business(middleware.ScopeWageringWrite, http.HandlerFunc(h.handleSubmitWager))))
+	mux.Handle("GET /metrics", base(internal(middleware.ScopeMetricsRead, http.HandlerFunc(h.handleMetrics))))
+	mux.Handle("POST /wallets", base(internalBusiness(middleware.ScopeWalletsWrite, http.HandlerFunc(h.handleOpenWallet))))
+	mux.Handle("POST /wagering/transactions", base(provider(middleware.ScopeWageringWrite,
+		middleware.RateLimit(h.concurrency)(middleware.MaxBytes(h.maxBodyBytes)(middleware.RequireJSON(http.HandlerFunc(h.handleSubmitWager)))))))
 	mux.Handle("GET /wagering/transactions/{transactionId}", base(business(middleware.ScopeWageringRead, http.HandlerFunc(h.handleTransactionByID))))
-	mux.Handle("POST /wallets/{walletId}/reconciliation", base(protected(middleware.ScopeReconciliationExecute,
+	mux.Handle("POST /wallets/{walletId}/reconciliation", base(internal(middleware.ScopeReconciliationExecute,
 		middleware.RateLimit(h.concurrency)(middleware.MaxBytes(h.maxBodyBytes)(http.HandlerFunc(h.handleReconcile))))))
 	mux.Handle("/", base(http.HandlerFunc(h.handleNotFound)))
 	return mux
@@ -272,6 +285,20 @@ func (h *Handler) handleTransactionByID(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		h.writeApplicationError(w, r, err)
 		return
+	}
+	principal, _ := middleware.PrincipalFrom(r.Context())
+	if principal.ProviderID != "" {
+		// A provider sees only its own external transactions. Internal
+		// OPENING transactions are internal operations and never visible to
+		// a provider; another provider's transaction is reported as absent.
+		if result.Origin == financial.OriginInternal {
+			middleware.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "internal transactions are not visible to providers")
+			return
+		}
+		if result.ProviderID.String() != principal.ProviderID {
+			middleware.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "transaction not found")
+			return
+		}
 	}
 	middleware.WriteJSON(w, http.StatusOK, newTransactionResponse(result))
 }

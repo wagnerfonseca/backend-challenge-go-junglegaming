@@ -26,8 +26,8 @@ import (
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
 )
 
-// C4 - Invalid or unavailable configuration, PostgreSQL or SQS at startup
-// exits non-zero before readiness becomes healthy.
+// C4 - Invalid or unavailable configuration, PostgreSQL, SQS or OIDC at
+// startup exits non-zero before readiness becomes healthy.
 func TestStartupFailure(t *testing.T) {
 	// Invalid configuration is rejected when the graph is built.
 	if _, err := app.New(config.Config{}); err == nil {
@@ -37,6 +37,11 @@ func TestStartupFailure(t *testing.T) {
 	missingQueue.SQS.IngressQueueURL = ""
 	if _, err := app.New(missingQueue); err == nil {
 		t.Fatal("configuration without an ingress queue built an application graph")
+	}
+	missingOIDC := testAppConfig(t)
+	missingOIDC.OIDC = config.OIDC{}
+	if _, err := app.New(missingOIDC); err == nil {
+		t.Fatal("configuration without OIDC built an application graph")
 	}
 
 	// PostgreSQL unavailable fails startup.
@@ -50,6 +55,11 @@ func TestStartupFailure(t *testing.T) {
 	unreachableQueue.SQS.IngressQueueURL = "http://127.0.0.1:1/wager-transactions.fifo"
 	unreachableQueue.SQS.EventQueueURL = "http://127.0.0.1:1/wager-events.fifo"
 	startFails(t, unreachableQueue, "SQS")
+
+	// OIDC discovery unavailable fails startup.
+	unreachableOIDC := testAppConfig(t)
+	unreachableOIDC.OIDC.IssuerURL = "http://127.0.0.1:1/realms/wager"
+	startFails(t, unreachableOIDC, "OIDC")
 }
 
 func startFails(t *testing.T, cfg config.Config, dependency string) {
@@ -88,6 +98,8 @@ func TestSIGTERMOrdering(t *testing.T) {
 		"SQS_ENDPOINT="+localstackEndpoint,
 		"SQS_INGRESS_QUEUE_URL="+queues.IngressURL,
 		"SQS_EVENT_QUEUE_URL="+queues.EventURL,
+		"OIDC_ISSUER_URL="+keycloakIssuer,
+		"OIDC_AUDIENCE=wager-api",
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
 		"AWS_REGION=us-east-1",
@@ -299,6 +311,7 @@ func testAppConfig(t *testing.T) config.Config {
 		LogLevel:    "debug",
 		Database:    config.Database{URL: applicationDSN(t)},
 		HTTP:        config.HTTP{Addr: "127.0.0.1:0", ConcurrencyLimit: 16, MaxBodyBytes: 1 << 20},
+		OIDC:        config.OIDC{IssuerURL: keycloakIssuer, Audience: "wager-api"},
 		SQS: config.SQS{
 			Region:          "us-east-1",
 			Endpoint:        localstackEndpoint,

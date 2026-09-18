@@ -726,7 +726,16 @@ func walletView(wallet financial.Wallet) WalletView {
 func resultOf(txn financial.WagerTransaction, replay bool) WagerResult {
 	return WagerResult{
 		TransactionID:     txn.ID(),
+		Origin:            txn.Origin(),
 		Kind:              txn.Kind(),
+		ProviderID:        txn.ProviderID(),
+		ExternalID:        txn.ExternalTransactionID(),
+		WalletID:          txn.WalletID(),
+		PlayerID:          txn.PlayerID(),
+		RoundID:           txn.RoundID(),
+		GameID:            txn.GameID(),
+		Amount:            txn.Amount(),
+		ReferenceExternal: txn.ReferenceExternalTransactionID(),
 		State:             txn.State(),
 		ObservedBalance:   txn.ObservedBalance(),
 		FailureCode:       txn.FailureCode(),

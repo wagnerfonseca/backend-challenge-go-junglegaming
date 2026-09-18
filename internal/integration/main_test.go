@@ -25,6 +25,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tclocalstack "github.com/testcontainers/testcontainers-go/modules/localstack"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/failpoint"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/metrics"
@@ -39,6 +40,7 @@ var (
 	testDSN            string
 	adminPool          *pgxpool.Pool
 	localstackEndpoint string
+	keycloakIssuer     string
 )
 
 func TestMain(m *testing.M) {
@@ -101,10 +103,57 @@ func TestMain(m *testing.M) {
 	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", "test")
 	_ = os.Setenv("AWS_REGION", "us-east-1")
 
+	// A real Keycloak validates every authentication proof. The imported realm
+	// carries provider and internal service accounts with their scopes.
+	realmPath, err := filepath.Abs(filepath.Join("..", "..", "deploy", "keycloak", "realm.json"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolving the keycloak realm: %v\n", err)
+		os.Exit(1)
+	}
+	keycloakContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image: "quay.io/keycloak/keycloak:26.0",
+			Env: map[string]string{
+				"KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
+				"KC_BOOTSTRAP_ADMIN_PASSWORD": "admin",
+				// The local daemon shares its memory budget with PostgreSQL and
+				// LocalStack; bound the Keycloak JVM explicitly.
+				"JAVA_OPTS_APPEND": "-Xms64m -Xmx512m",
+			},
+			Cmd:          []string{"start-dev", "--import-realm"},
+			ExposedPorts: []string{"8080/tcp"},
+			Files: []testcontainers.ContainerFile{{
+				HostFilePath:      realmPath,
+				ContainerFilePath: "/opt/keycloak/data/import/wager-realm.json",
+				FileMode:          0o644,
+			}},
+			WaitingFor: wait.ForHTTP("/realms/wager").
+				WithPort("8080/tcp").
+				WithStartupTimeout(7 * time.Minute),
+		},
+		Started: true,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "starting keycloak container: %v\n", err)
+		os.Exit(1)
+	}
+	keycloakHost, err := keycloakContainer.Host(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolving keycloak host: %v\n", err)
+		os.Exit(1)
+	}
+	keycloakPort, err := keycloakContainer.MappedPort(ctx, "8080/tcp")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolving keycloak port: %v\n", err)
+		os.Exit(1)
+	}
+	keycloakIssuer = "http://" + keycloakHost + ":" + keycloakPort.Port() + "/realms/wager"
+
 	code := m.Run()
 	adminPool.Close()
 	_ = container.Terminate(ctx)
 	_ = localstackContainer.Terminate(ctx)
+	_ = keycloakContainer.Terminate(ctx)
 	os.Exit(code)
 }
 

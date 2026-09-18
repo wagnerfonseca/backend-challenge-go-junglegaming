@@ -40,6 +40,12 @@ type Database struct {
 	URL string
 }
 
+// OIDC holds the external identity provider contract.
+type OIDC struct {
+	IssuerURL string
+	Audience  string
+}
+
 // Config is the complete service configuration.
 type Config struct {
 	Environment Environment
@@ -49,6 +55,7 @@ type Config struct {
 	Database    Database
 	HTTP        HTTP
 	SQS         SQS
+	OIDC        OIDC
 	// Providers maps an SQS SenderId to the provider it authenticates.
 	Providers map[string]string
 	// Failpoints lists the integration failpoints to enable. They are only
@@ -96,6 +103,10 @@ func Load() Config {
 			EventQueueURL:   envOr("SQS_EVENT_QUEUE_URL", ""),
 			ConsumerName:    envOr("SQS_CONSUMER_NAME", DefaultConsumerName),
 		},
+		OIDC: OIDC{
+			IssuerURL: os.Getenv("OIDC_ISSUER_URL"),
+			Audience:  os.Getenv("OIDC_AUDIENCE"),
+		},
 		Providers:  parseProviders(envOr("SQS_PROVIDER_SENDER_IDS", DefaultProviderRegistration)),
 		Failpoints: parseList(os.Getenv("FAILPOINTS")),
 	}
@@ -125,6 +136,12 @@ func (c Config) Validate() error {
 	}
 	if len(c.Providers) == 0 {
 		return fmt.Errorf("config: at least one SQS provider identity is required")
+	}
+	if c.OIDC.IssuerURL == "" {
+		return fmt.Errorf("config: OIDC_ISSUER_URL is required")
+	}
+	if c.OIDC.Audience == "" {
+		return fmt.Errorf("config: OIDC_AUDIENCE is required")
 	}
 	return nil
 }

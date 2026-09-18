@@ -32,8 +32,8 @@ func (p Principal) HasScope(scope string) bool {
 var ErrUnauthenticated = errors.New("middleware: unauthenticated")
 
 // Authenticator validates one request credential. The OIDC implementation
-// lands with the authentication adapter; tests inject controlled identities
-// through the same boundary.
+// validates Keycloak tokens; tests inject controlled identities through the
+// same boundary.
 type Authenticator interface {
 	Authenticate(ctx context.Context, r *http.Request) (Principal, error)
 }
@@ -94,6 +94,41 @@ func Authenticate(authenticator Authenticator) func(http.Handler) http.Handler {
 
 // ErrForbidden marks an authenticated caller rejected before the use case.
 var ErrForbidden = errors.New("middleware: forbidden")
+
+// RequireInternal rejects provider credentials on internal routes. Wallet,
+// ledger, reconciliation, metrics and internal OPENING operations are only
+// reachable by a client without a provider identity.
+func RequireInternal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFrom(r.Context())
+		if !ok {
+			WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+			return
+		}
+		if principal.ProviderID != "" {
+			WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "provider credentials cannot call internal routes")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireProvider rejects credentials without an authenticated provider on
+// provider routes.
+func RequireProvider(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFrom(r.Context())
+		if !ok {
+			WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+			return
+		}
+		if principal.ProviderID == "" {
+			WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "a provider identity is required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // RequireScope enforces one exact route scope before invoking the handler.
 func RequireScope(scope string) func(http.Handler) http.Handler {

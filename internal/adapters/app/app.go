@@ -68,7 +68,22 @@ func New(cfg config.Config, extras ...fx.Option) (*fx.App, error) {
 
 func newClock() application.Clock { return application.SystemClock{} }
 
-func newAuthenticator() middleware.Authenticator { return auth.DenyAll{} }
+// newAuthenticator builds the OIDC boundary from the configured issuer. An
+// unavailable or inconsistent discovery document fails startup before the
+// service can become ready.
+func newAuthenticator(lc fx.Lifecycle, cfg config.Config) (middleware.Authenticator, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	authenticator, err := auth.NewOIDC(ctx, cfg.OIDC.IssuerURL, cfg.OIDC.Audience)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{OnStop: func(context.Context) error {
+		authenticator.Close()
+		return nil
+	}})
+	return authenticator, nil
+}
 
 func newPool(lc fx.Lifecycle, cfg config.Config, recorder Recorder, logger *slog.Logger) (*pgxpool.Pool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

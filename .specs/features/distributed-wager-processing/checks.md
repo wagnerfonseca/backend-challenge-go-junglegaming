@@ -326,13 +326,13 @@ Proof: `grep -rE 'sync\.(Mutex|RWMutex|Once|Map|Pool)|sync\.Once|global' interna
 
 ### S7 - OIDC e políticas impedem acesso entre provedores (AC 102-111)
 
-**C102** - Keycloak token validates signature, issuer, audience, expiry, route scope, and provider_id claim (AC 102)
+**C102** - Keycloak token validates signature, issuer, audience, expiry, route scope, and provider_id claim (AC 102) [done]
 Proof: `go test ./... -run TestOIDCTokenValidation -tags integration`
 
-**C103** - Absent, invalid, or expired credentials return `401` without financial effect or protected data (AC 103)
+**C103** - Absent, invalid, or expired credentials return `401` without financial effect or protected data (AC 103) [done]
 Proof: `go test ./... -run TestUnauthorizedNoData -tags integration`
 
-**C104** - Authenticated provider_id is the provider authority for provider operations (AC 104)
+**C104** - Authenticated provider_id is the provider authority for provider operations (AC 104) [done]
 Proof: `go test ./... -run TestProviderAuthority -tags integration`
 
 **C105** - Provider supplying different providerId in body or path returns `403` (AC 105)
@@ -347,13 +347,13 @@ Proof: `go test ./... -run TestProviderForbiddenRoutes -tags integration`
 **C108** - Internal client with exact required scope accesses internal route without provider_id claim (AC 108)
 Proof: `go test ./... -run TestInternalAccessNoProvider -tags integration`
 
-**C109** - Provider using wagering:write or wagering:read submits/reads only matching provider_id transactions (AC 109)
+**C109** - Provider using wagering:write or wagering:read submits/reads only matching provider_id transactions (AC 109) [done]
 Proof: `go test ./... -run TestProviderScopeIsolation -tags integration`
 
 **C110** - Health live/ready routes require no credential (AC 110)
 Proof: `curl http://localhost:8080/health/live && curl http://localhost:8080/health/ready`
 
-**C111** - SQS ingress maps SenderId to configured provider and requires equality with data.providerId (AC 111)
+**C111** - SQS ingress maps SenderId to configured provider and requires equality with data.providerId (AC 111) [done]
 Proof: `go test ./... -run TestSQSSenderIdAuthorization -tags integration`
 
 ### S8 - Leituras, paginação e reconciliação (AC 112-126)
