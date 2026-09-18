@@ -35,7 +35,7 @@ Proof: `go test ./... -run TestSIGTERMSOFSQS -tags integration`
 **C8** - Shutdown closes PostgreSQL and SQS only after HTTP and all workers stopped (AC 8)
 Proof: `go test ./... -run TestShutdownOrder -tags integration`
 
-**C9** - `docker compose up --build` leaves one application instance in `ready` after health checks pass (AC 9)
+**C9** - `docker compose up --build` leaves one application instance in `ready` after health checks pass (AC 9) [done]
 Proof: `docker compose up --build && curl http://localhost:8080/health/ready`
 
 **C10** - Forward and reverse migrations exit non-zero on failure (AC 10)
@@ -350,7 +350,7 @@ Proof: `go test ./... -run TestInternalAccessNoProvider -tags integration`
 **C109** - Provider using wagering:write or wagering:read submits/reads only matching provider_id transactions (AC 109) [done]
 Proof: `go test ./... -run TestProviderScopeIsolation -tags integration`
 
-**C110** - Health live/ready routes require no credential (AC 110)
+**C110** - Health live/ready routes require no credential (AC 110) [done]
 Proof: `curl http://localhost:8080/health/live && curl http://localhost:8080/health/ready`
 
 **C111** - SQS ingress maps SenderId to configured provider and requires equality with data.providerId (AC 111) [done]
@@ -511,7 +511,7 @@ Proof: `curl http://localhost:8080/health/live`
 **C160** - PostgreSQL and SQS under 2s returns /health/ready 200 {"status":"ready"}; otherwise 503 {"status":"not_ready"} (AC 160)
 Proof: `go test ./... -run TestHealthReady -tags integration`
 
-**C161** - Internal metrics client with metrics:read calling GET /metrics returns Prometheus text format (AC 161)
+**C161** - Internal metrics client with metrics:read calling GET /metrics returns Prometheus text format (AC 161) [done]
 Proof: `curl -H 'Authorization: Bearer $METRICS_TOKEN' http://localhost:8080/metrics | head -1`
 
 **C162** - Metrics endpoint exposes all 8 named metrics with correct labels (AC 162)
@@ -591,7 +591,7 @@ Proof: `grep -E 'pré-requisitos|variáveis de ambiente|filas|IdP|migração|ini
 **C186** - ARCHITECTURE.md uses decision-oriented Portuguese covering Money, SQL boundary, idempotency, locks, state machine, failure codes, transient/permanent classifier, pending-reference policy, reversals, inbox, SQS visibility/redrive, outbox, outbound consumption, auth, authorization, Fx lifecycle, shutdown, limitations, unfinished work (AC 186)
 Proof: `grep -E 'Money|SQL|idempotência|lock|máquina de estados|código de falha|transitório|permanente|referência pendente|reversão|inbox|SQS|outbox|autenticação|autorização|Fx|encerramento|limitação|trabalho pendente' ARCHITECTURE.md | head -20`
 
-**C187** - .env.example uses commented KEY=value with local example values and no real secret (AC 187)
+**C187** - .env.example uses commented KEY=value with local example values and no real secret (AC 187) [done]
 Proof: `grep '^#' .env.example | head -5 && ! grep -E 'secret|password|token' .env.example | grep -v '^#' || echo no-secrets`
 
 **C188** - `docker compose up --build`, `go test ./...`, `go test -race ./...`, `go vet ./...` failing exits non-zero with actionable output (AC 188)

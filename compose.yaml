@@ -1,0 +1,120 @@
+# Local delivery stack: PostgreSQL, Keycloak, LocalStack, migrations, queue
+# provisioning and one application instance. `docker compose up --build`
+# leaves the instance ready on http://localhost:8080.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: wager
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d wager"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Tokens always carry the issuer the application container can reach.
+      KC_HOSTNAME: http://keycloak:8080
+      JAVA_OPTS_APPEND: "-Xms64m -Xmx512m"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./deploy/keycloak/realm.json:/opt/keycloak/data/import/wager-realm.json:ro
+    healthcheck:
+      test:
+        - "CMD"
+        - "/usr/bin/bash"
+        - "-c"
+        - "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/wager HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200' <&3"
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: sqs
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  migrate:
+    build: .
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["-direction", "up"]
+    environment:
+      DATABASE_URL: postgres://admin:admin@postgres:5432/wager?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  provision:
+    build: .
+    entrypoint: ["/usr/local/bin/provision"]
+    environment:
+      SQS_ENDPOINT: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  app:
+    build: .
+    environment:
+      APP_ENV: production
+      SERVICE_NAME: distributed-wager-processing
+      INSTANCE_ID: instance-1
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://wager_app:wager_app_local@postgres:5432/wager?sslmode=disable
+      HTTP_ADDR: ":8080"
+      OIDC_ISSUER_URL: http://keycloak:8080/realms/wager
+      OIDC_AUDIENCE: wager-api
+      SQS_ENDPOINT: http://localstack:4566
+      SQS_INGRESS_QUEUE_URL: http://localstack:4566/000000000000/wager-transactions.fifo
+      SQS_EVENT_QUEUE_URL: http://localstack:4566/000000000000/wager-events.fifo
+      SQS_PROVIDER_SENDER_IDS: sender-a=provider-a,sender-b=provider-b
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      provision:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health/ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  postgres-data:
