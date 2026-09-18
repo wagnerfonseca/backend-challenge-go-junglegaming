@@ -97,7 +97,7 @@ type OutboxRecord struct {
 // outbox publisher.
 type OutboxStore interface {
 	ClaimDueEvents(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]OutboxRecord, error)
-	MarkPublished(ctx context.Context, eventID string, publishedAt time.Time) error
+	ConfirmEvent(ctx context.Context, eventID string, confirmedAt time.Time) error
 	RescheduleEvent(ctx context.Context, eventID string, now, nextAttemptAt time.Time, attempts int) error
 	OldestPendingAge(ctx context.Context, now time.Time) (time.Duration, bool, error)
 }

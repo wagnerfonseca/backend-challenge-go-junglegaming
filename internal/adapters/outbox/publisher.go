@@ -137,7 +137,7 @@ func (p *Publisher) PublishOnce(ctx context.Context) (int, error) {
 			continue
 		}
 		p.failpoints.Hit(failpoint.OutboxAfterPublish)
-		if err := p.store.MarkPublished(ctx, record.EventID, now); err != nil {
+		if err := p.store.ConfirmEvent(ctx, record.EventID, now); err != nil {
 			return published, err
 		}
 		published++

@@ -46,11 +46,12 @@ func (s *Store) ClaimDueEvents(ctx context.Context, now time.Time, limit int, le
 	return records, nil
 }
 
-// MarkPublished confirms one publication. The event snapshot is never updated.
-func (s *Store) MarkPublished(ctx context.Context, eventID string, publishedAt time.Time) error {
+// ConfirmEvent confirms one accepted publication. The event snapshot is never
+// updated.
+func (s *Store) ConfirmEvent(ctx context.Context, eventID string, confirmedAt time.Time) error {
 	_, err := s.pool.Exec(ctx,
 		`UPDATE outbox_events SET "publishedAt" = $2, "claimedUntil" = NULL WHERE "eventId" = $1`,
-		eventID, publishedAt.UTC(),
+		eventID, confirmedAt.UTC(),
 	)
 	return mapError(err)
 }
