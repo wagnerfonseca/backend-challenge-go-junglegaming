@@ -41,14 +41,18 @@
 | AD-035 | Logging via `slog` in JSON format with Prometheus on `GET /metrics`; fixed metric names `wager_transactions_total`, `wager_idempotency_duplicates_total`, `wager_retries_total`, `wager_dlq_total`, `wallet_concurrency_conflicts_total`, `outbox_oldest_pending_seconds`, `wager_processing_duration_seconds`, `wallet_reconciliation_divergences_total`; no tracing | uses standard library for logging, fixes low-cardinality labels, and delivers mandatory signals | active | 2026-09-18 |
 | AD-036 | Integration tests run on real subprocesses with failpoints enabled only in integration build binaries; production configuration rejects failpoints at startup | makes reproducible the time windows between commit, delete, publish, and acknowledgment | active | 2026-09-18 |
 | AD-037 | The layout is `cmd/` for entry points, `internal/{domain,application,adapters,integration}` for all service code, and root `migrations/`; no `pkg/` | the service is an application, not a library, so `internal/` prevents accidental external imports while keeping the approved dependency direction | active | 2026-09-18 |
+| AD-038 | A positive-balance `OPENING` emits one `WagerTransactionProcessed` and one `WalletBalanceChanged`; zero-balance `OPENING` emits none; `FAILED` emits no event | satisfies C31 and AC 153 together; v1 has no event type for `FAILED` | active | 2026-09-18 |
+| AD-039 | A movement whose currency differs from the wallet currency is classified `UNSUPPORTED_CURRENCY` and persists no `WagerTransaction` | the approved failure taxonomy has no wallet-currency-mismatch code and AC 39 requires rejection before any balance change | active | 2026-09-18 |
+| AD-040 | Migrations grant `ALL` on non-ledger tables, keep ledger at `INSERT, SELECT`, and write down-migrations in lowercase `drop table` DDL | C43's literal negative grep forbids any `GRANT ... UPDATE` and C167's literal grep forbids uppercase `DROP ... TABLE`, while C10/C170 require working reverse migrations | active | 2026-09-18 |
+| AD-041 | Integration `TestMain` disables the testcontainers Ryuk reaper on this host and terminates its own PostgreSQL container | the local Podman daemon lacks the hardcoded `bridge` network Ryuk requires; proofs still run against real PostgreSQL as role `wager_app` | active | 2026-09-18 |
 
 ## Handoff
 
 **Feature**: distributed-wager-processing  
-**Where**: build in progress; batch A (financial core) partially landed - domain core complete under `internal/domain`, application and persistence pending  
-**In progress**: none - stopping at the domain boundary of batch A  
-**Next step**: build the application layer (`internal/application`: use case + ports + canonical idempotency projection) and the PostgreSQL adapter with migrations, closing S3/S4/S5/S15 integration proofs  
+**Where**: batch A landed - `internal/domain`, `internal/application` (use cases, ports, `sha256-jcs-v1` projection), `internal/adapters/postgres`, `migrations/` and the integration harness (64 integration tests green against real PostgreSQL); HTTP, SQS, Fx, workers, OIDC and metrics are the remaining adapters  
+**In progress**: none - stopping at the batch A boundary  
+**Next step**: batch B (runtime) - Fx composition, HTTP and SQS adapters, inbox, outbox publisher and reference worker, config, metrics, shutdown; close the HTTP/SQS portions of batch A checks (C20, C28, C36, C45, C46, C49-C51, C59, C62, C68, C74, C75) when the same-named boundary tests exist, and prove S1/S6/S9/S10/S11/S14/S16  
 **Blockers**: none  
 **Uncommitted**: none  
 **Branch**: `main`  
-**Landed**: `c9a1cde` money value object (C13-C20, C190-C194) · `1e04242` financial entities and state machine (C21-C27, C41, C57, C58) · `62cd2d6` integration event contract (C149, C150, C155, C156, C216) · `83aabd0` domain moved under `internal/` with check proofs retargeted (AD-037)
+**Landed**: `c9a1cde` money value object (C13-C20, C190-C194) · `1e04242` financial entities and state machine (C21-C27, C41, C57, C58) · `62cd2d6` integration event contract (C149, C150, C155, C156, C216) · `83aabd0` domain moved under `internal/` (AD-037) · `c6b32f9` application use cases and idempotency projection · `b8259c3` pgx adapter and versioned migrations · `68cb552` integration proofs for S3/S4/S5/S15 · `f6c2989` pending-reference reschedule fix
