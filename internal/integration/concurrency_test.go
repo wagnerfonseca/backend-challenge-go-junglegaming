@@ -134,6 +134,17 @@ func TestLostUpdatePrevention(t *testing.T) {
 // C94 - Two distinct 80.00 BRL bets against 100.00 BRL produce one PROCESSED,
 // one REJECTED/INSUFFICIENT_FUNDS, final 20.00 BRL and one debit.
 func TestConcurrentBetsTwoWallets(t *testing.T) {
+	assertConcurrentBetsIntegration(t)
+}
+
+// C173 - The integration suite submits two 80.00 BRL bets against 100.00 BRL
+// observing one success, one insufficient-funds, 20.00 BRL and one debit.
+func TestConcurrentBetsIntegration(t *testing.T) {
+	assertConcurrentBetsIntegration(t)
+}
+
+func assertConcurrentBetsIntegration(t *testing.T) {
+	t.Helper()
 	h := newHarness(t)
 	view := h.openWallet("100.00")
 	commands := []application.SubmitWagerCommand{
@@ -192,6 +203,17 @@ func TestReplayAfterDispute(t *testing.T) {
 // C96 - The same valid bet submitted 50 times in parallel produces one debit
 // and one transaction result.
 func TestFiftyParallelBets(t *testing.T) {
+	assertParallelFiftyBets(t)
+}
+
+// C172 - The integration suite submits one bet 50 times in parallel and
+// observes one debit.
+func TestParallelFiftyBets(t *testing.T) {
+	assertParallelFiftyBets(t)
+}
+
+func assertParallelFiftyBets(t *testing.T) {
+	t.Helper()
 	h := newHarness(t)
 	view := h.openWallet("1000.00")
 	command := h.command(view, financial.KindBet, "25.00")

@@ -534,55 +534,55 @@ Proof: `grep -rE 'DELETE.*FROM.*(transactions|ledger|reversal|inbox|outbox)|DROP
 
 ### S12 - Entrega prova garantias com infraestrutura real (AC 168-189)
 
-**C168** - `go test ./...` passes unit tests for Money, Wallet, state transitions, all operation kinds, idempotency conflict, internal OPENING (AC 168)
+**C168** - `go test ./...` passes unit tests for Money, Wallet, state transitions, all operation kinds, idempotency conflict, internal OPENING (AC 168) [done]
 Proof: `go test ./...`
 
-**C169** - Integration tests use real PostgreSQL, Keycloak, LocalStack containers, not mocks (AC 169)
+**C169** - Integration tests use real PostgreSQL, Keycloak, LocalStack containers, not mocks (AC 169) [done]
 Proof: `grep -r 'testcontainers\|ContainerRequest\|compose' internal/integration/ | head -5`
 
-**C170** - Integration suite applies and reverses every migration and exercises constraints and ledger write denial (AC 170)
+**C170** - Integration suite applies and reverses every migration and exercises constraints and ledger write denial (AC 170) [done]
 Proof: `go test ./... -run TestMigrationReversal -tags integration`
 
 **C171** - Integration suite proves absent/invalid/expired credentials, provider isolation, internal-scope restrictions against Keycloak (AC 171) [done]
 Proof: `go test ./... -run TestAuthIntegration -tags integration`
 
-**C172** - Integration suite submits one bet 50 times in parallel and observes one debit (AC 172)
+**C172** - Integration suite submits one bet 50 times in parallel and observes one debit (AC 172) [done]
 Proof: `go test ./... -run TestParallelFiftyBets -tags integration`
 
-**C173** - Integration suite submits two 80.00 BRL bets against 100.00 BRL observing one success, one insufficient-funds, 20.00 BRL, one debit (AC 173)
+**C173** - Integration suite submits two 80.00 BRL bets against 100.00 BRL observing one success, one insufficient-funds, 20.00 BRL, one debit (AC 173) [done]
 Proof: `go test ./... -run TestConcurrentBetsIntegration -tags integration`
 
-**C174** - Integration suite processes distinct wallets concurrently without wallet-global lock (AC 174)
+**C174** - Integration suite processes distinct wallets concurrently without wallet-global lock (AC 174) [done]
 Proof: `go test ./... -run TestDistinctWalletsConcurrent -tags integration`
 
-**C175** - Integration suite runs concurrency scenarios through at least three independent processes with separate memory and connections (AC 175)
+**C175** - Integration suite runs concurrency scenarios through at least three independent processes with separate memory and connections (AC 175) [done]
 Proof: `go test ./... -run TestThreeProcessIntegration -tags integration`
 
-**C176** - Integration suite interrupts consumer after commit before SQS delete observing safe redelivery (AC 176)
+**C176** - Integration suite interrupts consumer after commit before SQS delete observing safe redelivery (AC 176) [done]
 Proof: `go test ./... -run TestConsumerInterruption -tags integration`
 
-**C177** - Integration suite runs two publishers against one outbox observing abandoned-lease recovery (AC 177)
+**C177** - Integration suite runs two publishers against one outbox observing abandoned-lease recovery (AC 177) [done]
 Proof: `go test ./... -run TestOutboxPublisherRace -tags integration`
 
-**C178** - Integration suite delivers early REFUND and ROLLBACK, resolves one via late reference, rejects other at expiry (AC 178)
+**C178** - Integration suite delivers early REFUND and ROLLBACK, resolves one via late reference, rejects other at expiry (AC 178) [done]
 Proof: `go test ./... -run TestReferenceTimingIntegration -tags integration`
 
-**C179** - Integration suite restarts all processes preserving idempotency, pending references, outbox, balances, ledger consistency (AC 179)
+**C179** - Integration suite restarts all processes preserving idempotency, pending references, outbox, balances, ledger consistency (AC 179) [done]
 Proof: `go test ./... -run TestProcessRestartIntegration -tags integration`
 
-**C180** - Integration suite crosses HTTP and SQS for same operation observing one financial result (AC 180)
+**C180** - Integration suite crosses HTTP and SQS for same operation observing one financial result (AC 180) [done]
 Proof: `go test ./... -run TestHTTPAndSQSIntegration -tags integration`
 
-**C181** - Integration suite compares every stored balance with opening plus credits minus debits (AC 181)
+**C181** - Integration suite compares every stored balance with opening plus credits minus debits (AC 181) [done]
 Proof: `go test ./... -run TestBalanceVerification -tags integration`
 
-**C182** - Integration suite starts and stops Fx graph observing all goroutines and resources terminate (AC 182)
+**C182** - Integration suite starts and stops Fx graph observing all goroutines and resources terminate (AC 182) [done]
 Proof: `go test ./... -run TestFxLifecycle -tags integration`
 
-**C183** - `go test -race ./...` and documented integration race command report no data race (AC 183)
+**C183** - `go test -race ./...` and documented integration race command report no data race (AC 183) [done]
 Proof: `go test -race ./...`
 
-**C184** - `go vet ./...` exits 0 (AC 184)
+**C184** - `go vet ./...` exits 0 (AC 184) [done]
 Proof: `go vet ./...`
 
 **C185** - README uses Portuguese documenting prerequisites, env vars, queue/IdP identities, migrations, startup, authenticated calls, test commands, three-instance execution, DLQ redrive, fault simulation (AC 185)
@@ -594,10 +594,10 @@ Proof: `grep -E 'Money|SQL|idempotência|lock|máquina de estados|código de fal
 **C187** - .env.example uses commented KEY=value with local example values and no real secret (AC 187) [done]
 Proof: `grep '^#' .env.example | head -5 && ! grep -E 'secret|password|token' .env.example | grep -v '^#' || echo no-secrets`
 
-**C188** - `docker compose up --build`, `go test ./...`, `go test -race ./...`, `go vet ./...` failing exits non-zero with actionable output (AC 188)
+**C188** - `docker compose up --build`, `go test ./...`, `go test -race ./...`, `go vet ./...` failing exits non-zero with actionable output (AC 188) [done]
 Proof: `go test ./...; echo exit:$? && go vet ./...; echo exit:$?`
 
-**C189** - Delivered Go source is gofmt-formatted (AC 189)
+**C189** - Delivered Go source is gofmt-formatted (AC 189) [done]
 Proof: `gofmt -l . && echo all-formatted`
 
 ### S13 - Operações monetárias com valor exato (AC 190-194)
