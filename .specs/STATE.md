@@ -44,9 +44,10 @@
 ## Handoff
 
 **Feature**: distributed-wager-processing  
-**Where**: plan approved; checks not yet derived; implementation not started  
-**In progress**: none  
-**Next step**: derive `.specs/features/distributed-wager-processing/checks.md` from the approved plan, then run `validate_checks.py`  
+**Where**: build in progress; batch A (financial core) partially landed - domain core complete, application and persistence pending  
+**In progress**: none - stopping at the domain boundary of batch A  
+**Next step**: build the application layer (use case + ports + canonical idempotency projection) and the PostgreSQL adapter with migrations, closing S3/S4/S5/S15 integration proofs  
 **Blockers**: none  
-**Uncommitted**: `AGENTS.md`, `.specs/STATE.md`, `.specs/features/distributed-wager-processing/plan.md`  
-**Branch**: no Git repository detected
+**Uncommitted**: none  
+**Branch**: `main`  
+**Landed**: `c9a1cde` money value object (C13-C20, C190-C194) · `1e04242` financial entities and state machine (C21-C27, C41, C57, C58) · `62cd2d6` integration event contract (C149, C150, C155, C156, C216)
