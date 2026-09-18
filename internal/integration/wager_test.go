@@ -552,6 +552,30 @@ func TestPendingReferenceState(t *testing.T) {
 	if record.State != "PENDING_REFERENCE" || record.ReferenceDeadline == nil {
 		t.Errorf("persisted dependent = %s deadline=%v, want PENDING_REFERENCE with deadline", record.State, record.ReferenceDeadline)
 	}
+
+	h.clock.Advance(record.NextAttemptAt.Sub(h.clock.Now()))
+	advanced, err := h.service.ResolvePendingReference(h.ctx(), application.ResolvePendingReferenceCommand{
+		TransactionID: result.TransactionID,
+		CorrelationID: newCorrelation(),
+	})
+	if err != nil {
+		t.Fatalf("advancing a dependent whose reference is still pending: %v", err)
+	}
+	if advanced.State != financial.StatePendingReference {
+		t.Fatalf("state = %s, want PENDING_REFERENCE", advanced.State)
+	}
+	record = h.transactionByID(result.TransactionID)
+	if record.ReferenceAttempts != 1 {
+		t.Errorf("referenceAttempts = %d, want 1 after one retry", record.ReferenceAttempts)
+	}
+
+	invalid := h.command(view, financial.KindRefund, "50.00")
+	invalid.ReferenceExternalID = win.ExternalTransactionID
+	invalid.RoundID = win.RoundID
+	rejected := h.mustSubmit(invalid)
+	if rejected.State != financial.StateRejected || rejected.FailureCode != financial.FailureReferenceKindNotAllowed {
+		t.Errorf("refund of a pending WIN = %s/%s, want REJECTED/REFERENCE_KIND_NOT_ALLOWED", rejected.State, rejected.FailureCode)
+	}
 }
 
 // C86 - A reference that ends REJECTED or FAILED ends the dependent
@@ -618,6 +642,37 @@ func TestReferenceExpiry(t *testing.T) {
 	}
 	if rejected != 1 {
 		t.Errorf("rejected events = %d, want 1", rejected)
+	}
+}
+
+// C87 - An unresolved reference that still exists in a waiting state at the
+// dependent's deadline also ends REJECTED with REFERENCE_NOT_FOUND.
+func TestReferenceExpiryWhileWaiting(t *testing.T) {
+	h := newHarness(t)
+	view := h.openWallet("1000.00")
+	win := h.command(view, financial.KindWin, "50.00")
+	win.ReferenceExternalID = newExternalID("bet")
+	winResult := h.mustSubmit(win)
+	if winResult.State != financial.StatePendingReference {
+		t.Fatalf("win state = %s, want PENDING_REFERENCE", winResult.State)
+	}
+	rollback := h.command(view, financial.KindRollback, "50.00")
+	rollback.ReferenceExternalID = win.ExternalTransactionID
+	rollback.RoundID = win.RoundID
+	pending := h.mustSubmit(rollback)
+	if pending.State != financial.StatePendingReference {
+		t.Fatalf("dependent state = %s, want PENDING_REFERENCE", pending.State)
+	}
+	h.clock.Advance(24 * time.Hour)
+	resolved, err := h.service.ResolvePendingReference(h.ctx(), application.ResolvePendingReferenceCommand{
+		TransactionID: pending.TransactionID,
+		CorrelationID: newCorrelation(),
+	})
+	if err != nil {
+		t.Fatalf("resolving expired dependent: %v", err)
+	}
+	if resolved.State != financial.StateRejected || resolved.FailureCode != financial.FailureReferenceNotFound {
+		t.Fatalf("resolved = %s/%s, want REJECTED/REFERENCE_NOT_FOUND", resolved.State, resolved.FailureCode)
 	}
 }
 

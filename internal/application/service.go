@@ -241,13 +241,17 @@ func (s *WagerService) ResolvePendingReference(ctx context.Context, cmd ResolveP
 			}
 			return err
 		}
-		if ref == nil {
+		plan, err := s.planOperation(ctx, repos, txn, ref)
+		if err != nil {
+			return err
+		}
+		if plan.pending {
 			if !now.Before(txn.ReferenceDeadline()) {
 				return s.rejectReferenceNotFound(ctx, repos, wall, txn, now, correlation, &result)
 			}
 			return s.rescheduleReference(ctx, repos, txn, attempts, now, &result)
 		}
-		return s.executeWithReference(ctx, repos, wall, txn, ref, now, correlation, &result)
+		return s.executePlan(ctx, repos, wall, txn, plan, now, correlation, &result)
 	})
 	if err != nil {
 		return WagerResult{}, err
@@ -332,27 +336,43 @@ func (s *WagerService) loadReference(ctx context.Context, repos Repositories, tx
 	return &ref, nil
 }
 
-// executeWithReference classifies and applies one operation against the
-// optional resolved reference, persisting the terminal state with its
-// reference identity, movement, ledger entry, claim and outbox events.
-func (s *WagerService) executeWithReference(ctx context.Context, repos Repositories, wall financial.Wallet, txn financial.WagerTransaction, ref *financial.WagerTransaction, now time.Time, correlation string, result *WagerResult) error {
+// planOperation classifies one operation against its optional resolved
+// reference. It performs no persistence and fills the terminal reference
+// identity required by C211.
+func (s *WagerService) planOperation(ctx context.Context, repos Repositories, txn financial.WagerTransaction, ref *financial.WagerTransaction) (operationPlan, error) {
 	claimExists := false
 	if ref != nil && isClaimingKind(txn.Kind()) && ref.State() == financial.StateProcessed {
 		_, found, err := repos.ReversalClaims.ByReference(ctx, ref.ID())
 		if err != nil {
-			return err
+			return operationPlan{}, err
 		}
 		claimExists = found
 	}
 	plan, err := classify(txn, ref, claimExists)
 	if err != nil {
-		return wrapInvariant(err)
+		return operationPlan{}, wrapInvariant(err)
 	}
 	if ref != nil && !plan.pending && plan.referenceID.IsZero() {
 		// C211: any reference that resolves to an existing transaction is
 		// persisted with the resulting terminal state in the same commit.
 		plan.referenceID = ref.ID()
 	}
+	return plan, nil
+}
+
+// executeWithReference classifies and applies one operation for the first
+// submission path, persisting the terminal state with its reference identity,
+// movement, ledger entry, claim and outbox events.
+func (s *WagerService) executeWithReference(ctx context.Context, repos Repositories, wall financial.Wallet, txn financial.WagerTransaction, ref *financial.WagerTransaction, now time.Time, correlation string, result *WagerResult) error {
+	plan, err := s.planOperation(ctx, repos, txn, ref)
+	if err != nil {
+		return err
+	}
+	return s.executePlan(ctx, repos, wall, txn, plan, now, correlation, result)
+}
+
+// executePlan persists one classified outcome inside the current transaction.
+func (s *WagerService) executePlan(ctx context.Context, repos Repositories, wall financial.Wallet, txn financial.WagerTransaction, plan operationPlan, now time.Time, correlation string, result *WagerResult) error {
 	if plan.pending {
 		deadline := now.Add(ReferenceTTL)
 		pending, err := txn.MarkPendingReference(deadline, now)
