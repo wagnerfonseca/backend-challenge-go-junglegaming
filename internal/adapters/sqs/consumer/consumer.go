@@ -63,6 +63,7 @@ type Config struct {
 	ReceiveBatch      int
 	VisibilityTimeout time.Duration
 	RenewEvery        time.Duration
+	ShutdownGrace     time.Duration
 }
 
 // Consumer polls the ingress queue and confirms only durably committed work.
@@ -100,6 +101,9 @@ func New(cfg Config, client API, useCase UseCase, options ...Option) *Consumer {
 	}
 	if cfg.RenewEvery <= 0 {
 		cfg.RenewEvery = VisibilityRenewal
+	}
+	if cfg.ShutdownGrace <= 0 {
+		cfg.ShutdownGrace = ShutdownGrace
 	}
 	c := &Consumer{client: client, useCase: useCase, cfg: cfg}
 	for _, option := range options {
@@ -189,27 +193,33 @@ func (c *Consumer) process(ctx context.Context, message *types.Message) {
 	}
 	digest := sha256.Sum256(body)
 	started := time.Now()
-	result, duplicate, err := c.useCase.SubmitWagerFromInbox(ctx, command, application.InboxDelivery{
+	outcome := c.submit(ctx, command, application.InboxDelivery{
 		ConsumerName: c.cfg.ConsumerName,
 		MessageID:    envelope.MessageID,
 		Digest:       hex.EncodeToString(digest[:]),
 		ReceivedAt:   started.UTC(),
 	})
-	if err != nil {
+	if outcome.timedOut {
+		// The in-flight work could not finish within the shutdown grace:
+		// release the message visibility for redelivery.
+		c.release(ctx, handle)
+		return
+	}
+	if outcome.err != nil {
 		if ctx.Err() != nil {
 			c.release(ctx, handle)
 			return
 		}
-		if application.IsTransient(err) {
+		if application.IsTransient(outcome.err) {
 			c.metrics.WagerRetriesTotal.Inc("sqs", "transient")
 			c.backoff(ctx, handle, receiveCount)
 			return
 		}
 		reason := "invalid_message"
-		if code, ok := application.ErrorCodeOf(err); ok && code == application.CodeInboxPayloadConflict {
+		if code, ok := application.ErrorCodeOf(outcome.err); ok && code == application.CodeInboxPayloadConflict {
 			reason = "inbox_payload_conflict"
 		}
-		c.abandon(ctx, handle, reason, err)
+		c.abandon(ctx, handle, reason, outcome.err)
 		return
 	}
 	c.failpoints.Hit(failpoint.SQSAfterCommit)
@@ -219,12 +229,43 @@ func (c *Consumer) process(ctx context.Context, message *types.Message) {
 		return
 	}
 	c.failpoints.Hit(failpoint.SQSAfterDelete)
-	if duplicate {
+	if outcome.duplicate {
 		c.metrics.WagerIdempotencyDuplicatesTotal.Inc("sqs")
 		return
 	}
-	c.metrics.WagerTransactionsTotal.Inc(string(result.Kind), string(result.State), "sqs")
-	c.metrics.WagerProcessingDurationSeconds.Observe(time.Since(started).Seconds(), "sqs", string(result.Kind), string(result.State))
+	c.metrics.WagerTransactionsTotal.Inc(string(outcome.result.Kind), string(outcome.result.State), "sqs")
+	c.metrics.WagerProcessingDurationSeconds.Observe(time.Since(started).Seconds(), "sqs", string(outcome.result.Kind), string(outcome.result.State))
+}
+
+// processOutcome is the result of one inbox submission.
+type processOutcome struct {
+	result    application.WagerResult
+	duplicate bool
+	err       error
+	timedOut  bool
+}
+
+// submit runs the use case and, after cancellation, waits up to the shutdown
+// grace for it to finish before releasing the in-flight message.
+func (c *Consumer) submit(ctx context.Context, command application.SubmitWagerCommand, delivery application.InboxDelivery) processOutcome {
+	results := make(chan processOutcome, 1)
+	go func() {
+		result, duplicate, err := c.useCase.SubmitWagerFromInbox(ctx, command, delivery)
+		results <- processOutcome{result: result, duplicate: duplicate, err: err}
+	}()
+	select {
+	case outcome := <-results:
+		return outcome
+	case <-ctx.Done():
+		timer := time.NewTimer(c.cfg.ShutdownGrace)
+		defer timer.Stop()
+		select {
+		case outcome := <-results:
+			return outcome
+		case <-timer.C:
+			return processOutcome{timedOut: true}
+		}
+	}
 }
 
 // ReceiveCount parses the ApproximateReceiveCount system attribute.

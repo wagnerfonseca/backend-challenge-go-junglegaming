@@ -48,12 +48,18 @@ type ProvisionAPI interface {
 // after 5 receives) and the outbound event FIFO queue. Existing queues are
 // reused.
 func Provision(ctx context.Context, client ProvisionAPI) (Queues, error) {
-	dlqURL, dlqARN, err := ensureQueue(ctx, client, DLQName, map[string]string{
+	return ProvisionNamed(ctx, client, IngressQueueName, DLQName, EventQueueName)
+}
+
+// ProvisionNamed provisions one queue set under explicit names, so isolated
+// environments can run side by side.
+func ProvisionNamed(ctx context.Context, client ProvisionAPI, ingressName, dlqName, eventName string) (Queues, error) {
+	dlqURL, dlqARN, err := ensureQueue(ctx, client, dlqName, map[string]string{
 		string(types.QueueAttributeNameFifoQueue):              "true",
 		string(types.QueueAttributeNameMessageRetentionPeriod): fmt.Sprintf("%d", DLQRetentionPeriod),
 	})
 	if err != nil {
-		return Queues{}, fmt.Errorf("provisioning %s: %w", DLQName, err)
+		return Queues{}, fmt.Errorf("provisioning %s: %w", dlqName, err)
 	}
 	redrive, err := json.Marshal(map[string]string{
 		"deadLetterTargetArn": dlqARN,
@@ -62,7 +68,7 @@ func Provision(ctx context.Context, client ProvisionAPI) (Queues, error) {
 	if err != nil {
 		return Queues{}, err
 	}
-	ingressURL, _, err := ensureQueue(ctx, client, IngressQueueName, map[string]string{
+	ingressURL, _, err := ensureQueue(ctx, client, ingressName, map[string]string{
 		string(types.QueueAttributeNameFifoQueue):                     "true",
 		string(types.QueueAttributeNameContentBasedDeduplication):     "false",
 		string(types.QueueAttributeNameVisibilityTimeout):             fmt.Sprintf("%d", VisibilityTimeout),
@@ -70,15 +76,15 @@ func Provision(ctx context.Context, client ProvisionAPI) (Queues, error) {
 		string(types.QueueAttributeNameRedrivePolicy):                 string(redrive),
 	})
 	if err != nil {
-		return Queues{}, fmt.Errorf("provisioning %s: %w", IngressQueueName, err)
+		return Queues{}, fmt.Errorf("provisioning %s: %w", ingressName, err)
 	}
-	eventURL, _, err := ensureQueue(ctx, client, EventQueueName, map[string]string{
+	eventURL, _, err := ensureQueue(ctx, client, eventName, map[string]string{
 		string(types.QueueAttributeNameFifoQueue):                 "true",
 		string(types.QueueAttributeNameContentBasedDeduplication): "false",
 		string(types.QueueAttributeNameVisibilityTimeout):         fmt.Sprintf("%d", VisibilityTimeout),
 	})
 	if err != nil {
-		return Queues{}, fmt.Errorf("provisioning %s: %w", EventQueueName, err)
+		return Queues{}, fmt.Errorf("provisioning %s: %w", eventName, err)
 	}
 	return Queues{IngressURL: ingressURL, DLQURL: dlqURL, EventURL: eventURL}, nil
 }

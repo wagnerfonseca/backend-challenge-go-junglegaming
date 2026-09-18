@@ -15,6 +15,25 @@ func WithReconciler(reconciler Reconciler) Option {
 	return func(s *WagerService) { s.reconciler = reconciler }
 }
 
+// TxFailpoint is an integration-only hook evaluated immediately before a
+// financial transaction commits. Returning an error aborts the transaction
+// and leaves no partial state.
+type TxFailpoint func(stage string) error
+
+// WithTxFailpoint installs the transaction-boundary failpoint. Production
+// composition never installs one; the configuration rejects failpoint
+// activation outside integration binaries.
+func WithTxFailpoint(failpoint TxFailpoint) Option {
+	return func(s *WagerService) { s.txFailpoint = failpoint }
+}
+
+func (s *WagerService) hitFailpoint(stage string) error {
+	if s.txFailpoint == nil {
+		return nil
+	}
+	return s.txFailpoint(stage)
+}
+
 // ReconciliationReport is the auditable difference between the stored wallet
 // balance and the one derived from the complete ledger.
 type ReconciliationReport struct {

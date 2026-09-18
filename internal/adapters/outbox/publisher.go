@@ -54,6 +54,7 @@ type Publisher struct {
 	metrics    *metrics.Metrics
 	logger     *slog.Logger
 	failpoints *failpoint.Set
+	now        func() time.Time
 }
 
 // Option customizes the publisher.
@@ -68,9 +69,12 @@ func WithLogger(logger *slog.Logger) Option { return func(p *Publisher) { p.logg
 // WithFailpoints attaches the integration failpoint set.
 func WithFailpoints(set *failpoint.Set) Option { return func(p *Publisher) { p.failpoints = set } }
 
+// WithClock overrides the claim clock for deterministic tests.
+func WithClock(now func() time.Time) Option { return func(p *Publisher) { p.now = now } }
+
 // New builds the publisher.
 func New(store application.OutboxStore, sender Sender, options ...Option) *Publisher {
-	p := &Publisher{store: store, sender: sender}
+	p := &Publisher{store: store, sender: sender, now: func() time.Time { return time.Now().UTC() }}
 	for _, option := range options {
 		option(p)
 	}
@@ -111,7 +115,7 @@ func (p *Publisher) Run(ctx context.Context) error {
 // PublishOnce claims and publishes one batch, returning how many events were
 // confirmed.
 func (p *Publisher) PublishOnce(ctx context.Context) (int, error) {
-	now := time.Now().UTC()
+	now := p.now()
 	records, err := p.store.ClaimDueEvents(ctx, now, Batch, Lease)
 	if err != nil {
 		return 0, err

@@ -70,7 +70,7 @@ func newClock() application.Clock { return application.SystemClock{} }
 
 func newAuthenticator() middleware.Authenticator { return auth.DenyAll{} }
 
-func newPool(lc fx.Lifecycle, cfg config.Config, recorder Recorder) (*pgxpool.Pool, error) {
+func newPool(lc fx.Lifecycle, cfg config.Config, recorder Recorder, logger *slog.Logger) (*pgxpool.Pool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, cfg.Database.URL)
@@ -83,6 +83,7 @@ func newPool(lc fx.Lifecycle, cfg config.Config, recorder Recorder) (*pgxpool.Po
 	}
 	lc.Append(fx.Hook{OnStop: func(context.Context) error {
 		pool.Close()
+		logger.Info("postgres pool closed")
 		recorder.Record("postgres.closed")
 		return nil
 	}})
@@ -206,6 +207,7 @@ func registerHTTPServer(lc fx.Lifecycle, cfg config.Config, handler *httpadapter
 					return ctx.Err()
 				}
 			}
+			logger.Info("http server stopped")
 			recorder.Record("http.stopped")
 			return nil
 		},
@@ -258,6 +260,7 @@ func registerRunner(lc fx.Lifecycle, stopEvent string, logger *slog.Logger, reco
 					return ctx.Err()
 				}
 			}
+			logger.Info("worker stopped", "event", stopEvent)
 			recorder.Record(stopEvent)
 			return nil
 		},

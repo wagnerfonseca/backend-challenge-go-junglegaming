@@ -58,9 +58,9 @@ func (s *Store) MarkPublished(ctx context.Context, eventID string, publishedAt t
 // RescheduleEvent releases one lease and records the next attempt.
 func (s *Store) RescheduleEvent(ctx context.Context, eventID string, now, nextAttemptAt time.Time, attempts int) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE outbox_events SET "nextAttemptAt" = $3, "attempts" = $4, "claimedUntil" = NULL
+		`UPDATE outbox_events SET "nextAttemptAt" = $2, "attempts" = $3, "claimedUntil" = NULL
 		WHERE "eventId" = $1 AND "publishedAt" IS NULL`,
-		eventID, now.UTC(), nextAttemptAt.UTC(), int64(attempts),
+		eventID, nextAttemptAt.UTC(), int64(attempts),
 	)
 	return mapError(err)
 }
