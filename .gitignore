@@ -11,6 +11,8 @@
 
 # Tool and editor files
 .DS_Store
+.agents/
+.opencode/
 .idea/
 .vscode/
 
