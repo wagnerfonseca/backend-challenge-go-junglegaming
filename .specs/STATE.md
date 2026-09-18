@@ -40,14 +40,15 @@
 | AD-034 | Reconciliation uses `REPEATABLE READ`, reads the full ledger, performs no write locks; 30-second timeout returns `503` without partial results | produces a consistent view without blocking movements during a full scan | active | 2026-09-18 |
 | AD-035 | Logging via `slog` in JSON format with Prometheus on `GET /metrics`; fixed metric names `wager_transactions_total`, `wager_idempotency_duplicates_total`, `wager_retries_total`, `wager_dlq_total`, `wallet_concurrency_conflicts_total`, `outbox_oldest_pending_seconds`, `wager_processing_duration_seconds`, `wallet_reconciliation_divergences_total`; no tracing | uses standard library for logging, fixes low-cardinality labels, and delivers mandatory signals | active | 2026-09-18 |
 | AD-036 | Integration tests run on real subprocesses with failpoints enabled only in integration build binaries; production configuration rejects failpoints at startup | makes reproducible the time windows between commit, delete, publish, and acknowledgment | active | 2026-09-18 |
+| AD-037 | The layout is `cmd/` for entry points, `internal/{domain,application,adapters,integration}` for all service code, and root `migrations/`; no `pkg/` | the service is an application, not a library, so `internal/` prevents accidental external imports while keeping the approved dependency direction | active | 2026-09-18 |
 
 ## Handoff
 
 **Feature**: distributed-wager-processing  
-**Where**: build in progress; batch A (financial core) partially landed - domain core complete, application and persistence pending  
+**Where**: build in progress; batch A (financial core) partially landed - domain core complete under `internal/domain`, application and persistence pending  
 **In progress**: none - stopping at the domain boundary of batch A  
-**Next step**: build the application layer (use case + ports + canonical idempotency projection) and the PostgreSQL adapter with migrations, closing S3/S4/S5/S15 integration proofs  
+**Next step**: build the application layer (`internal/application`: use case + ports + canonical idempotency projection) and the PostgreSQL adapter with migrations, closing S3/S4/S5/S15 integration proofs  
 **Blockers**: none  
 **Uncommitted**: none  
 **Branch**: `main`  
-**Landed**: `c9a1cde` money value object (C13-C20, C190-C194) · `1e04242` financial entities and state machine (C21-C27, C41, C57, C58) · `62cd2d6` integration event contract (C149, C150, C155, C156, C216)
+**Landed**: `c9a1cde` money value object (C13-C20, C190-C194) · `1e04242` financial entities and state machine (C21-C27, C41, C57, C58) · `62cd2d6` integration event contract (C149, C150, C155, C156, C216) · `83aabd0` domain moved under `internal/` with check proofs retargeted (AD-037)
