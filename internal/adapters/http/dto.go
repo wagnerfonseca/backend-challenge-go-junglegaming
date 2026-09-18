@@ -65,7 +65,15 @@ type wagerRequest struct {
 
 type transactionResponse struct {
 	TransactionID                  string     `json:"transactionId"`
+	Origin                         string     `json:"origin"`
+	ProviderID                     string     `json:"providerId,omitempty"`
+	ExternalTransactionID          string     `json:"externalTransactionId,omitempty"`
+	WalletID                       string     `json:"walletId"`
+	PlayerID                       string     `json:"playerId"`
+	RoundID                        string     `json:"roundId,omitempty"`
+	GameID                         string     `json:"gameId,omitempty"`
 	Kind                           string     `json:"kind"`
+	Money                          *moneyView `json:"money"`
 	Status                         string     `json:"status"`
 	Balance                        *moneyView `json:"balance,omitempty"`
 	FailureCode                    string     `json:"failureCode,omitempty"`
@@ -79,10 +87,23 @@ type transactionResponse struct {
 func newTransactionResponse(result application.WagerResult) transactionResponse {
 	response := transactionResponse{
 		TransactionID:    result.TransactionID.String(),
+		Origin:           string(result.Origin),
+		ProviderID:       result.ProviderID.String(),
+		WalletID:         result.WalletID.String(),
+		PlayerID:         result.PlayerID.String(),
+		RoundID:          result.RoundID.String(),
+		GameID:           result.GameID.String(),
 		Kind:             string(result.Kind),
+		Money:            newMoneyView(result.Amount),
 		Status:           string(result.State),
 		Balance:          newMoneyView(result.ObservedBalance),
 		IdempotentReplay: result.IdempotentReplay,
+	}
+	if !result.ExternalID.IsZero() {
+		response.ExternalTransactionID = result.ExternalID.String()
+	}
+	if !result.ReferenceExternal.IsZero() {
+		response.ReferenceExternalTransactionID = result.ReferenceExternal.String()
 	}
 	if result.FailureCode != "" {
 		response.FailureCode = string(result.FailureCode)
@@ -100,6 +121,39 @@ func newTransactionResponse(result application.WagerResult) transactionResponse 
 		response.UpdatedAt = &updated
 	}
 	return response
+}
+
+type ledgerEntryResponse struct {
+	ID            string     `json:"id"`
+	WalletID      string     `json:"walletId"`
+	TransactionID string     `json:"transactionId"`
+	Direction     string     `json:"direction"`
+	Money         *moneyView `json:"money"`
+	BalanceBefore *moneyView `json:"balanceBefore"`
+	BalanceAfter  *moneyView `json:"balanceAfter"`
+	CreatedAt     time.Time  `json:"createdAt"`
+}
+
+type ledgerPageResponse struct {
+	Items      []ledgerEntryResponse `json:"items"`
+	NextCursor string                `json:"nextCursor,omitempty"`
+}
+
+func newLedgerPageResponse(page application.LedgerPage) ledgerPageResponse {
+	items := make([]ledgerEntryResponse, 0, len(page.Items))
+	for _, entry := range page.Items {
+		items = append(items, ledgerEntryResponse{
+			ID:            entry.ID().String(),
+			WalletID:      entry.WalletID().String(),
+			TransactionID: entry.TransactionID().String(),
+			Direction:     string(entry.Direction()),
+			Money:         newMoneyView(entry.Amount()),
+			BalanceBefore: newMoneyView(entry.BalanceBefore()),
+			BalanceAfter:  newMoneyView(entry.BalanceAfter()),
+			CreatedAt:     entry.CreatedAt().UTC(),
+		})
+	}
+	return ledgerPageResponse{Items: items, NextCursor: page.NextCursor}
 }
 
 type reconciliationResponse struct {

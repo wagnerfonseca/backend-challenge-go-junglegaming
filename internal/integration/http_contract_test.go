@@ -49,7 +49,7 @@ func TestUnsupportedCurrency(t *testing.T) {
 // Retry-After: 1.
 func TestRateLimit256(t *testing.T) {
 	blocking := &blockingUseCases{entered: make(chan struct{}, 512), release: make(chan struct{})}
-	runtime := newHandlerRuntime(t, nil, blocking, allScopes("provider-a"), 256)
+	runtime := newHandlerRuntime(t, nil, blocking, internalClient(middleware.ScopeWalletsWrite), 256)
 	defer close(blocking.release)
 
 	var wait sync.WaitGroup
@@ -80,7 +80,7 @@ func TestRateLimit256(t *testing.T) {
 
 // C223 - A body above 1 MiB returns 413 PAYLOAD_TOO_LARGE before decoding.
 func TestPayloadTooLarge(t *testing.T) {
-	runtime := newHTTPRuntime(t)
+	runtime := newInternalHTTPRuntime(t)
 	oversized := `{"playerId":"` + strings.Repeat("a", 1<<20) + `"}`
 	status, data := runtime.request(http.MethodPost, "/wallets", oversized, nil)
 	requireStatus(t, status, http.StatusRequestEntityTooLarge, data)
@@ -92,12 +92,20 @@ func TestPayloadTooLarge(t *testing.T) {
 // C227 - A content type other than application/json returns 415
 // UNSUPPORTED_MEDIA_TYPE on both write routes.
 func TestUnsupportedMediaType(t *testing.T) {
-	runtime := newHTTPRuntime(t)
-	for _, path := range []string{"/wallets", "/wagering/transactions"} {
-		status, data := runtime.request(http.MethodPost, path, `{"playerId":"x"}`, map[string]string{"Content-Type": "text/plain"})
+	internal := newInternalHTTPRuntime(t)
+	provider := newHTTPRuntime(t)
+	cases := []struct {
+		path    string
+		runtime *httpRuntime
+	}{
+		{path: "/wallets", runtime: internal},
+		{path: "/wagering/transactions", runtime: provider},
+	}
+	for _, testCase := range cases {
+		status, data := testCase.runtime.request(http.MethodPost, testCase.path, `{"playerId":"x"}`, map[string]string{"Content-Type": "text/plain"})
 		requireStatus(t, status, http.StatusUnsupportedMediaType, data)
 		if envelope := decodeError(t, data); envelope.Error.Code != "UNSUPPORTED_MEDIA_TYPE" {
-			t.Errorf("%s code = %s, want UNSUPPORTED_MEDIA_TYPE", path, envelope.Error.Code)
+			t.Errorf("%s code = %s, want UNSUPPORTED_MEDIA_TYPE", testCase.path, envelope.Error.Code)
 		}
 	}
 }
@@ -273,12 +281,14 @@ func TestFailureMetricAndAudit(t *testing.T) {
 // C214 - A nonzero reconciliation difference increments
 // wallet_reconciliation_divergences_total by exactly one.
 func TestReconciliationMetric(t *testing.T) {
-	runtime := newHTTPRuntime(t)
-	view := runtime.harness.openWallet("1000.00")
-	bet := runtime.harness.command(view, financial.KindBet, "25.00")
-	status, data := runtime.postWager(wagerJSONOf(bet), bet.IdempotencyKey.String())
+	h := newHarness(t)
+	provider := newHTTPRuntimeWith(t, h, allScopes("provider-a"), nil)
+	runtime := newInternalRuntime(t, h)
+	view := h.openWallet("1000.00")
+	bet := h.command(view, financial.KindBet, "25.00")
+	status, data := provider.postWager(wagerJSONOf(bet), bet.IdempotencyKey.String())
 	requireStatus(t, status, 200, data)
-	if _, err := adminPool.Exec(runtime.harness.ctx(), `UPDATE wallets SET "balance" = "balance" + 100 WHERE "id" = $1`, view.ID.String()); err != nil {
+	if _, err := adminPool.Exec(h.ctx(), `UPDATE wallets SET "balance" = "balance" + 100 WHERE "id" = $1`, view.ID.String()); err != nil {
 		t.Fatalf("forcing divergence: %v", err)
 	}
 	status, data = runtime.reconcile(view.ID.String())
@@ -296,7 +306,7 @@ func TestReconciliationMetric(t *testing.T) {
 // C215 - A nonzero reconciliation difference writes one JSON log with
 // walletId, storedBalance, calculatedBalance and difference.
 func TestReconciliationLog(t *testing.T) {
-	runtime := newHTTPRuntime(t)
+	runtime := newInternalHTTPRuntime(t)
 	view := runtime.harness.openWallet("1000.00")
 	if _, err := adminPool.Exec(runtime.harness.ctx(), `UPDATE wallets SET "balance" = "balance" + 250 WHERE "id" = $1`, view.ID.String()); err != nil {
 		t.Fatalf("forcing divergence: %v", err)
@@ -466,6 +476,21 @@ func (b *blockingUseCases) SubmitWagerTransaction(context.Context, application.S
 }
 
 func (b *blockingUseCases) TransactionByID(context.Context, financial.TransactionID) (application.WagerResult, error) {
+	b.enter()
+	return application.WagerResult{}, nil
+}
+
+func (b *blockingUseCases) WalletByID(context.Context, financial.WalletID) (application.WalletView, error) {
+	b.enter()
+	return application.WalletView{}, nil
+}
+
+func (b *blockingUseCases) LedgerPage(context.Context, financial.WalletID, string, int) (application.LedgerPage, error) {
+	b.enter()
+	return application.LedgerPage{}, nil
+}
+
+func (b *blockingUseCases) TransactionByProviderAndExternalID(context.Context, financial.ProviderID, financial.ExternalID) (application.WagerResult, error) {
 	b.enter()
 	return application.WagerResult{}, nil
 }

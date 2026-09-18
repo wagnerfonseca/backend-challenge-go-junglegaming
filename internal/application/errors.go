@@ -21,6 +21,8 @@ const (
 	CodeIdempotencyKeyRequired      ErrorCode = "IDEMPOTENCY_KEY_REQUIRED"
 	CodeReferenceRequired           ErrorCode = "REFERENCE_REQUIRED"
 	CodeInvalidLossAmount           ErrorCode = "INVALID_LOSS_AMOUNT"
+	CodeInvalidCursor               ErrorCode = "INVALID_CURSOR"
+	CodeInvalidLimit                ErrorCode = "INVALID_LIMIT"
 	CodeWalletAlreadyExists         ErrorCode = "WALLET_ALREADY_EXISTS"
 	CodeIdempotencyConflict         ErrorCode = "IDEMPOTENCY_CONFLICT"
 	CodeExternalTransactionConflict ErrorCode = "EXTERNAL_TRANSACTION_CONFLICT"

@@ -48,9 +48,12 @@ type TransactionRepository interface {
 	ClaimDueReferences(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]financial.WagerTransaction, error)
 }
 
-// LedgerRepository appends immutable postings.
+// LedgerRepository appends immutable postings and pages them by keyset.
 type LedgerRepository interface {
 	Insert(ctx context.Context, entry financial.WalletLedgerEntry) error
+	// ListPage reads one ascending (createdAt,id) page after the cursor. It
+	// returns hasMore when another entry exists beyond the returned page.
+	ListPage(ctx context.Context, walletID financial.WalletID, currency string, after *LedgerCursor, limit int) ([]financial.WalletLedgerEntry, bool, error)
 }
 
 // ReversalClaimRepository records consumed direct compensation rights.

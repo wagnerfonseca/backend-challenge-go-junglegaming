@@ -151,3 +151,171 @@ func TestProviderScopeIsolation(t *testing.T) {
 		t.Fatalf("cross-provider response leaked the transaction: %s", string(body))
 	}
 }
+
+// C105 - A provider supplying a different provider in body or path returns 403
+// without processing or revealing the other provider's data.
+func TestProviderIdMismatch(t *testing.T) {
+	runtime := newOIDCRuntime(t)
+	view := runtime.harness.openWallet("100.00")
+	command := runtime.harness.command(view, financial.KindBet, "10.00")
+	providerA := keycloakToken(t, providerAAccount)
+
+	body := wagerJSONOf(command)
+	body.ProviderID = "provider-b"
+	status, response := runtime.request(http.MethodPost, "/wagering/transactions", body,
+		withBearer(providerA, map[string]string{"Idempotency-Key": command.IdempotencyKey.String()}))
+	requireStatus(t, status, 403, response)
+	if runtime.harness.transactionExists("provider-a", command.ExternalTransactionID) {
+		t.Error("mismatched provider in the body persisted a transaction")
+	}
+
+	status, response = runtime.request(http.MethodGet,
+		"/providers/provider-b/wagering/transactions/"+command.ExternalTransactionID.String(), nil, bearer(providerA))
+	requireStatus(t, status, 403, response)
+	if runtime.harness.transactionExists("provider-b", command.ExternalTransactionID) {
+		t.Error("mismatched provider in the path revealed provider-b data")
+	}
+}
+
+// C106 - A provider querying another provider's transaction by internal or
+// external identity returns 404 with no transaction fields.
+func TestCrossProviderQuery(t *testing.T) {
+	runtime := newOIDCRuntime(t)
+	view := runtime.harness.openWallet("100.00")
+	command := runtime.harness.command(view, financial.KindBet, "10.00")
+	providerA := keycloakToken(t, providerAAccount)
+	providerB := keycloakToken(t, providerBAccount)
+
+	status, body := runtime.request(http.MethodPost, "/wagering/transactions", wagerJSONOf(command),
+		withBearer(providerA, map[string]string{"Idempotency-Key": command.IdempotencyKey.String()}))
+	requireStatus(t, status, 200, body)
+	result := decodeJSONBody[wagerResultJSON](t, body)
+
+	status, body = runtime.request(http.MethodGet, "/wagering/transactions/"+result.TransactionID, nil, bearer(providerB))
+	requireStatus(t, status, 404, body)
+	if strings.Contains(string(body), result.TransactionID) || strings.Contains(string(body), "provider-a") {
+		t.Fatalf("internal-id lookup leaked the transaction: %s", string(body))
+	}
+
+	status, body = runtime.request(http.MethodGet,
+		"/providers/provider-b/wagering/transactions/"+command.ExternalTransactionID.String(), nil, bearer(providerB))
+	requireStatus(t, status, 404, body)
+	if strings.Contains(string(body), result.TransactionID) || strings.Contains(string(body), "provider-a") {
+		t.Fatalf("external-id lookup leaked the transaction: %s", string(body))
+	}
+}
+
+// C107 - A provider credential calling a wallet, ledger, reconciliation,
+// metrics or internal OPENING operation returns 403.
+func TestProviderForbiddenRoutes(t *testing.T) {
+	runtime := newOIDCRuntime(t)
+	view := runtime.harness.openWallet("100.00")
+	openingID := runtime.harness.openingTransactionID(view.ID)
+	providerA := keycloakToken(t, providerAAccount)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "open wallet", method: http.MethodPost, path: "/wallets"},
+		{name: "wallet get", method: http.MethodGet, path: "/wallets/" + view.ID.String()},
+		{name: "ledger", method: http.MethodGet, path: "/wallets/" + view.ID.String() + "/ledger"},
+		{name: "reconciliation", method: http.MethodPost, path: "/wallets/" + view.ID.String() + "/reconciliation"},
+		{name: "metrics", method: http.MethodGet, path: "/metrics"},
+		{name: "internal opening", method: http.MethodGet, path: "/wagering/transactions/" + openingID.String()},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var body any
+			if testCase.method == http.MethodPost && testCase.path == "/wallets" {
+				body = openWalletJSON{PlayerID: financial.NewPlayerID().String(), InitialBalance: moneyJSON{Amount: "0.00", Currency: "BRL"}}
+			}
+			status, response := runtime.request(testCase.method, testCase.path, body, bearer(providerA))
+			requireStatus(t, status, 403, response)
+			envelope := decodeError(t, response)
+			if envelope.Error.Code != "FORBIDDEN" {
+				t.Errorf("code = %s, want FORBIDDEN", envelope.Error.Code)
+			}
+		})
+	}
+}
+
+// C108 - The internal client accesses internal routes with the exact required
+// scope and no provider_id claim.
+func TestInternalAccessNoProvider(t *testing.T) {
+	runtime := newOIDCRuntime(t)
+	view := runtime.harness.openWallet("100.00")
+	openingID := runtime.harness.openingTransactionID(view.ID)
+	token := keycloakToken(t, internalAccount)
+
+	status, body := runtime.request(http.MethodGet, "/wallets/"+view.ID.String(), nil, bearer(token))
+	requireStatus(t, status, 200, body)
+
+	status, body = runtime.request(http.MethodGet, "/wallets/"+view.ID.String()+"/ledger", nil, bearer(token))
+	requireStatus(t, status, 200, body)
+
+	status, body = runtime.request(http.MethodPost, "/wallets/"+view.ID.String()+"/reconciliation", nil, bearer(token))
+	requireStatus(t, status, 200, body)
+
+	status, body = runtime.request(http.MethodGet, "/metrics", nil, bearer(token))
+	requireStatus(t, status, 200, body)
+
+	status, body = runtime.request(http.MethodGet, "/wagering/transactions/"+openingID.String(), nil, bearer(token))
+	requireStatus(t, status, 200, body)
+}
+
+// C171 - Against Keycloak, the suite proves absent, invalid and expired
+// credentials, provider isolation and internal-scope restrictions.
+func TestAuthIntegration(t *testing.T) {
+	runtime := newOIDCRuntime(t)
+	view := runtime.harness.openWallet("100.00")
+	command := runtime.harness.command(view, financial.KindBet, "10.00")
+	providerA := keycloakToken(t, providerAAccount)
+	providerB := keycloakToken(t, providerBAccount)
+	internal := keycloakToken(t, internalAccount)
+	openingID := runtime.harness.openingTransactionID(view.ID)
+
+	t.Run("absent credentials", func(t *testing.T) {
+		status, body := runtime.request(http.MethodGet, "/wallets/"+view.ID.String(), nil, nil)
+		requireStatus(t, status, 401, body)
+	})
+	t.Run("invalid credentials", func(t *testing.T) {
+		status, body := runtime.request(http.MethodGet, "/wallets/"+view.ID.String(), nil, bearer(tamperedToken(t, providerA)))
+		requireStatus(t, status, 401, body)
+	})
+	t.Run("expired credentials", func(t *testing.T) {
+		status, body := runtime.request(http.MethodGet, "/wallets/"+view.ID.String(), nil, bearer(expiredToken(t)))
+		requireStatus(t, status, 401, body)
+	})
+	t.Run("provider isolation", func(t *testing.T) {
+		status, body := runtime.request(http.MethodPost, "/wagering/transactions", wagerJSONOf(command),
+			withBearer(providerA, map[string]string{"Idempotency-Key": command.IdempotencyKey.String()}))
+		requireStatus(t, status, 200, body)
+		result := decodeJSONBody[wagerResultJSON](t, body)
+
+		status, body = runtime.request(http.MethodGet, "/wagering/transactions/"+result.TransactionID, nil, bearer(providerB))
+		requireStatus(t, status, 404, body)
+
+		status, body = runtime.request(http.MethodGet,
+			"/providers/provider-b/wagering/transactions/"+command.ExternalTransactionID.String(), nil, bearer(providerB))
+		requireStatus(t, status, 404, body)
+
+		status, body = runtime.request(http.MethodGet, "/wagering/transactions/"+openingID.String(), nil, bearer(providerA))
+		requireStatus(t, status, 403, body)
+	})
+	t.Run("internal scope restrictions", func(t *testing.T) {
+		status, body := runtime.request(http.MethodGet, "/wallets/"+view.ID.String(), nil, bearer(providerA))
+		requireStatus(t, status, 403, body)
+
+		status, body = runtime.request(http.MethodGet, "/metrics", nil, bearer(providerA))
+		requireStatus(t, status, 403, body)
+
+		status, body = runtime.request(http.MethodGet,
+			"/providers/provider-a/wagering/transactions/"+command.ExternalTransactionID.String(), nil, bearer(internal))
+		requireStatus(t, status, 403, body)
+
+		status, body = runtime.request(http.MethodGet, "/wallets/"+view.ID.String(), nil, bearer(internal))
+		requireStatus(t, status, 200, body)
+	})
+}

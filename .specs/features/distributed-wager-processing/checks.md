@@ -335,16 +335,16 @@ Proof: `go test ./... -run TestUnauthorizedNoData -tags integration`
 **C104** - Authenticated provider_id is the provider authority for provider operations (AC 104) [done]
 Proof: `go test ./... -run TestProviderAuthority -tags integration`
 
-**C105** - Provider supplying different providerId in body or path returns `403` (AC 105)
+**C105** - Provider supplying different providerId in body or path returns `403` (AC 105) [done]
 Proof: `go test ./... -run TestProviderIdMismatch -tags integration`
 
-**C106** - Provider querying another provider's transaction by internal or external ID returns `404` with no transaction fields (AC 106)
+**C106** - Provider querying another provider's transaction by internal or external ID returns `404` with no transaction fields (AC 106) [done]
 Proof: `go test ./... -run TestCrossProviderQuery -tags integration`
 
-**C107** - Provider credential calling wallet, ledger, reconciliation, metrics, or internal OPENING returns `403` (AC 107)
+**C107** - Provider credential calling wallet, ledger, reconciliation, metrics, or internal OPENING returns `403` (AC 107) [done]
 Proof: `go test ./... -run TestProviderForbiddenRoutes -tags integration`
 
-**C108** - Internal client with exact required scope accesses internal route without provider_id claim (AC 108)
+**C108** - Internal client with exact required scope accesses internal route without provider_id claim (AC 108) [done]
 Proof: `go test ./... -run TestInternalAccessNoProvider -tags integration`
 
 **C109** - Provider using wagering:write or wagering:read submits/reads only matching provider_id transactions (AC 109) [done]
@@ -358,49 +358,49 @@ Proof: `go test ./... -run TestSQSSenderIdAuthorization -tags integration`
 
 ### S8 - Leituras, paginação e reconciliação (AC 112-126)
 
-**C112** - Internal client gets existing wallet returning id, playerId, balance, version, createdAt, updatedAt (AC 112)
+**C112** - Internal client gets existing wallet returning id, playerId, balance, version, createdAt, updatedAt (AC 112) [done]
 Proof: `go test ./... -run TestWalletGetResponse -tags integration`
 
-**C113** - Ledger list without limit returns at most 50 entries ordered by (createdAt,id) ascending with opaque nextCursor (AC 113)
+**C113** - Ledger list without limit returns at most 50 entries ordered by (createdAt,id) ascending with opaque nextCursor (AC 113) [done]
 Proof: `go test ./... -run TestLedgerPagination -tags integration`
 
-**C114** - Ledger page with no entries returns 200 with items:[] and no nextCursor (AC 114)
+**C114** - Ledger page with no entries returns 200 with items:[] and no nextCursor (AC 114) [done]
 Proof: `go test ./... -run TestLedgerEmptyPage -tags integration`
 
-**C115** - Invalid cursor or limit outside 1..100 returns 400 INVALID_CURSOR or INVALID_LIMIT (AC 115)
+**C115** - Invalid cursor or limit outside 1..100 returns 400 INVALID_CURSOR or INVALID_LIMIT (AC 115) [done]
 Proof: `go test ./... -run TestLedgerInvalidCursor -tags integration`
 
-**C116** - Authorized caller gets transaction by internal ID with identity, provider, kind, money, reference, status, failure code, balance, timestamps (AC 116)
+**C116** - Authorized caller gets transaction by internal ID with identity, provider, kind, money, reference, status, failure code, balance, timestamps (AC 116) [done]
 Proof: `go test ./... -run TestTransactionGetResponse -tags integration`
 
-**C117** - Provider gets `/providers/{providerId}/wagering/transactions/{externalTransactionId}` returning provider-scoped view (AC 117)
+**C117** - Provider gets `/providers/{providerId}/wagering/transactions/{externalTransactionId}` returning provider-scoped view (AC 117) [done]
 Proof: `go test ./... -run TestProviderTransactionGet -tags integration`
 
-**C118** - Queried transaction pending/rejected/failed exposes exact persisted status and deadline or failure code (AC 118)
+**C118** - Queried transaction pending/rejected/failed exposes exact persisted status and deadline or failure code (AC 118) [done]
 Proof: `go test ./... -run TestTransactionStatusExposure -tags integration`
 
-**C119** - Reconciliation reads wallet and ledger in one REPEATABLE READ snapshot (AC 119)
+**C119** - Reconciliation reads wallet and ledger in one REPEATABLE READ snapshot (AC 119) [done]
 Proof: `grep -r 'REPEATABLE READ\|REPEATABLE' internal/adapters/postgres/*.go`
 
-**C120** - Reconciliation difference equals stored balance minus credits plus debits in wallet currency (AC 120)
+**C120** - Reconciliation difference equals stored balance minus credits plus debits in wallet currency (AC 120) [done]
 Proof: `go test ./... -run TestReconciliationCalculation -tags integration`
 
-**C121** - Reconciliation sees opening 1000.00 BRL and bet 25.00 BRL reports stored 975.00, calculated 975.00, difference 0.00, consistent:true, checkedEntries:2 (AC 121)
+**C121** - Reconciliation sees opening 1000.00 BRL and bet 25.00 BRL reports stored 975.00, calculated 975.00, difference 0.00, consistent:true, checkedEntries:2 (AC 121) [done]
 Proof: `go test ./... -run TestReconciliationConsistent -tags integration`
 
-**C122** - Reconciliation detecting nonzero difference returns that exact nonzero difference with consistent:false (AC 122)
+**C122** - Reconciliation detecting nonzero difference returns that exact nonzero difference with consistent:false (AC 122) [done]
 Proof: `go test ./... -run TestReconciliationDivergence -tags integration`
 
-**C123** - Reconciliation performs no wallet, transaction, or ledger write (AC 123)
+**C123** - Reconciliation performs no wallet, transaction, or ledger write (AC 123) [done]
 Proof: `go test ./... -run TestReconciliationNoWrite -tags integration`
 
-**C124** - Transport/validation error returns common error envelope with stable code and correlationId (AC 124)
+**C124** - Transport/validation error returns common error envelope with stable code and correlationId (AC 124) [done]
 Proof: `go test ./... -run TestErrorEnvelope -tags integration`
 
-**C125** - HTTP contract distinguishes 400|422, 401, 403, 404, 409, 413|415, 202, 200|201, 503 (AC 125)
+**C125** - HTTP contract distinguishes 400|422, 401, 403, 404, 409, 413|415, 202, 200|201, 503 (AC 125) [done]
 Proof: `go test ./... -run TestHttpResponseCodes -tags integration`
 
-**C126** - Supplied unprefixed routes remain implicit v1; incompatible changes use new route or media type (AC 126)
+**C126** - Supplied unprefixed routes remain implicit v1; incompatible changes use new route or media type (AC 126) [done]
 Proof: `grep '^GET\|^POST\|^PUT\|^DELETE' internal/adapters/http/*.go | head -20`
 
 ### S9 - SQS inbox durável e confirmação de trabalho (AC 127-142)
@@ -543,7 +543,7 @@ Proof: `grep -r 'testcontainers\|ContainerRequest\|compose' internal/integration
 **C170** - Integration suite applies and reverses every migration and exercises constraints and ledger write denial (AC 170)
 Proof: `go test ./... -run TestMigrationReversal -tags integration`
 
-**C171** - Integration suite proves absent/invalid/expired credentials, provider isolation, internal-scope restrictions against Keycloak (AC 171)
+**C171** - Integration suite proves absent/invalid/expired credentials, provider isolation, internal-scope restrictions against Keycloak (AC 171) [done]
 Proof: `go test ./... -run TestAuthIntegration -tags integration`
 
 **C172** - Integration suite submits one bet 50 times in parallel and observes one debit (AC 172)

@@ -362,6 +362,62 @@ func (s *WagerService) TransactionByID(ctx context.Context, id financial.Transac
 	return resultOf(txn, false), nil
 }
 
+// TransactionByProviderAndExternalID reads one transaction selected by its
+// provider and external identity.
+func (s *WagerService) TransactionByProviderAndExternalID(ctx context.Context, providerID financial.ProviderID, externalID financial.ExternalID) (WagerResult, error) {
+	if providerID.IsZero() {
+		return WagerResult{}, contractError(CodeInvalidRequest, "providerId is required")
+	}
+	if externalID.IsZero() {
+		return WagerResult{}, contractError(CodeInvalidRequest, "externalTransactionId is required")
+	}
+	txn, found, err := s.store.Repositories().Transactions.ByProviderAndExternalID(ctx, providerID, externalID)
+	if err != nil {
+		return WagerResult{}, err
+	}
+	if !found {
+		return WagerResult{}, notFoundError("transaction not found")
+	}
+	return resultOf(txn, false), nil
+}
+
+// LedgerPage reads one ascending page of a wallet ledger. An absent cursor
+// starts at the first entry; an invalid cursor or a limit outside 1..100 is a
+// contract error. The wallet must exist.
+func (s *WagerService) LedgerPage(ctx context.Context, walletID financial.WalletID, rawCursor string, limit int) (LedgerPage, error) {
+	if walletID.IsZero() {
+		return LedgerPage{}, contractError(CodeInvalidRequest, "walletId is required")
+	}
+	if limit < 1 || limit > LedgerMaxLimit {
+		return LedgerPage{}, contractError(CodeInvalidLimit, "limit must be between 1 and 100")
+	}
+	var after *LedgerCursor
+	if rawCursor != "" {
+		cursor, err := DecodeLedgerCursor(rawCursor)
+		if err != nil {
+			return LedgerPage{}, contractError(CodeInvalidCursor, "cursor is not a valid continuation token")
+		}
+		after = &cursor
+	}
+	wallet, found, err := s.store.Repositories().Wallets.ByID(ctx, walletID)
+	if err != nil {
+		return LedgerPage{}, err
+	}
+	if !found {
+		return LedgerPage{}, notFoundError("wallet not found")
+	}
+	entries, hasMore, err := s.store.Repositories().Ledger.ListPage(ctx, walletID, wallet.Currency(), after, limit)
+	if err != nil {
+		return LedgerPage{}, err
+	}
+	page := LedgerPage{Items: entries}
+	if hasMore && len(entries) > 0 {
+		last := entries[len(entries)-1]
+		page.NextCursor = EncodeLedgerCursor(LedgerCursor{CreatedAt: last.CreatedAt(), ID: last.ID()})
+	}
+	return page, nil
+}
+
 // resolveAndExecute is the shared path of a first submission and a reference
 // recovery pass: it loads the dependency, or applies the operation directly
 // when no reference is required.

@@ -97,7 +97,9 @@ func expiredToken(t *testing.T) string {
 	return token
 }
 
-// tamperedToken flips one character of the signature of a valid token.
+// tamperedToken flips one character in the middle of the signature of a valid
+// token. The middle of the signature always carries significant bits, unlike
+// the final base64url character.
 func tamperedToken(t *testing.T, token string) string {
 	t.Helper()
 	parts := strings.Split(token, ".")
@@ -105,10 +107,11 @@ func tamperedToken(t *testing.T, token string) string {
 		t.Fatalf("token is not a three-part JWT: %q", token)
 	}
 	signature := []byte(parts[2])
-	if signature[len(signature)-1] == 'A' {
-		signature[len(signature)-1] = 'B'
+	index := len(signature) / 2
+	if signature[index] == 'A' {
+		signature[index] = 'B'
 	} else {
-		signature[len(signature)-1] = 'A'
+		signature[index] = 'A'
 	}
 	return parts[0] + "." + parts[1] + "." + string(signature)
 }

@@ -41,7 +41,7 @@ func TestWalletOpenPositiveBalance(t *testing.T) {
 	}
 
 	// C28 transport boundary: POST /wallets returns 201 with the wallet view.
-	runtime := newHTTPRuntime(t)
+	runtime := newInternalHTTPRuntime(t)
 	httpPlayer := financial.NewPlayerID()
 	status, data := runtime.postWallet(openWalletJSON{
 		PlayerID:       httpPlayer.String(),
@@ -244,7 +244,7 @@ func TestWalletDuplicate(t *testing.T) {
 	}
 
 	// C36 transport boundary: the duplicate open returns 409 WALLET_ALREADY_EXISTS.
-	runtime := newHTTPRuntime(t)
+	runtime := newInternalHTTPRuntime(t)
 	status, data := runtime.postWallet(openWalletJSON{
 		PlayerID:       player.String(),
 		InitialBalance: moneyJSON{Amount: "500.00", Currency: "BRL"},

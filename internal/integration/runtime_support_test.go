@@ -110,6 +110,25 @@ func newHTTPRuntime(t *testing.T) *httpRuntime {
 	return newHTTPRuntimeWith(t, newHarness(t), allScopes("provider-a"), nil)
 }
 
+// internalAuthenticator carries every internal scope and no provider
+// identity, matching the internal Keycloak service account.
+func internalAuthenticator() middleware.Authenticator {
+	return internalClient(
+		middleware.ScopeWalletsWrite,
+		middleware.ScopeWalletsRead,
+		middleware.ScopeReconciliationExecute,
+		middleware.ScopeMetricsRead,
+		middleware.ScopeWageringRead,
+	)
+}
+
+// newInternalHTTPRuntime builds the real HTTP boundary over the real service
+// with an internal client identity.
+func newInternalHTTPRuntime(t *testing.T) *httpRuntime {
+	t.Helper()
+	return newHTTPRuntimeWith(t, newHarness(t), internalAuthenticator(), nil)
+}
+
 func newHTTPRuntimeWith(t *testing.T, h *harness, authenticator middleware.Authenticator, readiness httpadapter.Readiness) *httpRuntime {
 	t.Helper()
 	logs := &safeBuffer{}

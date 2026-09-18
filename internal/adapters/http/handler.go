@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/http/middleware"
@@ -23,7 +24,10 @@ import (
 type UseCases interface {
 	OpenWallet(ctx context.Context, cmd application.OpenWalletCommand) (application.WalletView, error)
 	SubmitWagerTransaction(ctx context.Context, cmd application.SubmitWagerCommand) (application.WagerResult, error)
+	WalletByID(ctx context.Context, id financial.WalletID) (application.WalletView, error)
+	LedgerPage(ctx context.Context, id financial.WalletID, cursor string, limit int) (application.LedgerPage, error)
 	TransactionByID(ctx context.Context, id financial.TransactionID) (application.WagerResult, error)
+	TransactionByProviderAndExternalID(ctx context.Context, providerID financial.ProviderID, externalID financial.ExternalID) (application.WagerResult, error)
 	ReconcileWallet(ctx context.Context, id financial.WalletID) (application.ReconciliationReport, error)
 }
 
@@ -121,9 +125,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("GET /health/ready", base(http.HandlerFunc(h.handleReady)))
 	mux.Handle("GET /metrics", base(internal(middleware.ScopeMetricsRead, http.HandlerFunc(h.handleMetrics))))
 	mux.Handle("POST /wallets", base(internalBusiness(middleware.ScopeWalletsWrite, http.HandlerFunc(h.handleOpenWallet))))
+	mux.Handle("GET /wallets/{walletId}", base(internal(middleware.ScopeWalletsRead, http.HandlerFunc(h.handleWalletByID))))
+	mux.Handle("GET /wallets/{walletId}/ledger", base(internal(middleware.ScopeWalletsRead, http.HandlerFunc(h.handleLedgerPage))))
 	mux.Handle("POST /wagering/transactions", base(provider(middleware.ScopeWageringWrite,
 		middleware.RateLimit(h.concurrency)(middleware.MaxBytes(h.maxBodyBytes)(middleware.RequireJSON(http.HandlerFunc(h.handleSubmitWager)))))))
 	mux.Handle("GET /wagering/transactions/{transactionId}", base(business(middleware.ScopeWageringRead, http.HandlerFunc(h.handleTransactionByID))))
+	mux.Handle("GET /providers/{providerId}/wagering/transactions/{externalTransactionId}", base(provider(middleware.ScopeWageringRead, http.HandlerFunc(h.handleProviderTransaction))))
 	mux.Handle("POST /wallets/{walletId}/reconciliation", base(internal(middleware.ScopeReconciliationExecute,
 		middleware.RateLimit(h.concurrency)(middleware.MaxBytes(h.maxBodyBytes)(http.HandlerFunc(h.handleReconcile))))))
 	mux.Handle("/", base(http.HandlerFunc(h.handleNotFound)))
@@ -180,6 +187,67 @@ func (h *Handler) handleOpenWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	middleware.WriteJSON(w, http.StatusCreated, newWalletResponse(view))
+}
+
+func (h *Handler) handleWalletByID(w http.ResponseWriter, r *http.Request) {
+	walletID, err := financial.ParseWalletID(r.PathValue("walletId"))
+	if err != nil {
+		middleware.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "walletId is outside the documented format")
+		return
+	}
+	view, err := h.useCases.WalletByID(r.Context(), walletID)
+	if err != nil {
+		h.writeApplicationError(w, r, err)
+		return
+	}
+	middleware.WriteJSON(w, http.StatusOK, newWalletResponse(view))
+}
+
+func (h *Handler) handleLedgerPage(w http.ResponseWriter, r *http.Request) {
+	walletID, err := financial.ParseWalletID(r.PathValue("walletId"))
+	if err != nil {
+		middleware.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "walletId is outside the documented format")
+		return
+	}
+	limit := application.LedgerDefaultLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			middleware.WriteError(w, r, http.StatusBadRequest, string(application.CodeInvalidLimit), "limit must be an integer between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	page, err := h.useCases.LedgerPage(r.Context(), walletID, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		h.writeApplicationError(w, r, err)
+		return
+	}
+	middleware.WriteJSON(w, http.StatusOK, newLedgerPageResponse(page))
+}
+
+func (h *Handler) handleProviderTransaction(w http.ResponseWriter, r *http.Request) {
+	principal, _ := middleware.PrincipalFrom(r.Context())
+	pathProvider, err := financial.ParseProviderID(r.PathValue("providerId"))
+	if err != nil {
+		middleware.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "providerId is outside the documented format")
+		return
+	}
+	if pathProvider.String() != principal.ProviderID {
+		middleware.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "providerId does not match the authenticated provider")
+		return
+	}
+	externalID, err := financial.ParseExternalID("externalTransactionId", r.PathValue("externalTransactionId"))
+	if err != nil {
+		middleware.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "externalTransactionId is outside the documented format")
+		return
+	}
+	result, err := h.useCases.TransactionByProviderAndExternalID(r.Context(), pathProvider, externalID)
+	if err != nil {
+		h.writeApplicationError(w, r, err)
+		return
+	}
+	middleware.WriteJSON(w, http.StatusOK, newTransactionResponse(result))
 }
 
 func (h *Handler) handleSubmitWager(w http.ResponseWriter, r *http.Request) {
@@ -359,6 +427,8 @@ func (h *Handler) writeApplicationError(w http.ResponseWriter, r *http.Request, 
 	case errors.Is(err, application.ErrConflict):
 		status = http.StatusConflict
 	case code == application.CodeIdempotencyKeyRequired:
+		status = http.StatusBadRequest
+	case code == application.CodeInvalidCursor || code == application.CodeInvalidLimit:
 		status = http.StatusBadRequest
 	case errors.Is(err, application.ErrContract):
 		status = http.StatusUnprocessableEntity
