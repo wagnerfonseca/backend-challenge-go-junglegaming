@@ -86,8 +86,23 @@ type httpRuntime struct {
 	registry        *metrics.Registry
 	bundle          *metrics.Metrics
 	logs            *safeBuffer
+	mu              sync.Mutex
 	lastRetryAfter  string
 	lastCorrelation string
+}
+
+// retryAfter returns the Retry-After header of the most recent response.
+func (r *httpRuntime) retryAfter() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastRetryAfter
+}
+
+// correlation returns the X-Correlation-ID header of the most recent response.
+func (r *httpRuntime) correlation() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastCorrelation
 }
 
 func newHTTPRuntime(t *testing.T) *httpRuntime {
@@ -145,8 +160,10 @@ func (r *httpRuntime) request(method, path string, body any, headers map[string]
 		r.t.Fatalf("performing request: %v", err)
 	}
 	defer resp.Body.Close()
+	r.mu.Lock()
 	r.lastRetryAfter = resp.Header.Get("Retry-After")
 	r.lastCorrelation = resp.Header.Get("X-Correlation-ID")
+	r.mu.Unlock()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		r.t.Fatalf("reading response: %v", err)
