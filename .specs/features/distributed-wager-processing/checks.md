@@ -20,7 +20,7 @@ Proof: `go build ./internal/domain/...`
 **C3** - The application graph composes configuration, connections, repositories, use cases, handlers, and workers through `fx.Module`, `fx.Provide`, and `fx.Invoke` (AC 3)
 Proof: `grep -r 'fx.Module\|fx.Provide\|fx.Invoke' cmd/ internal/adapters/`
 
-**C4** - Invalid or unavailable configuration, PostgreSQL, SQS, or OIDC at startup causes non-zero exit before readiness (AC 4)
+**C4** - Invalid or unavailable configuration, PostgreSQL, SQS, or OIDC at startup causes non-zero exit before readiness (AC 4) [done]
 Proof: `go test ./... -run TestStartupFailure -tags integration`
 
 **C5** - One `context.Context` propagates through application and I/O boundaries during requests and worker operations (AC 5)
@@ -802,3 +802,9 @@ Three batches, each carrying whole slices, handed off only on green:
 | C - surface and delivery | S7, S8, S12 | the checkout another person runs: OIDC, HTTP reads, three-instance suite, Compose, docs | ~25 files · ~125 KB · ~31k |
 
 Estimates are `wc -c` over the files each batch touches divided by four; total ~101k under the 150k budget. Batch B enters at the change from in-process calls to broker and server composition; batch C at the change from workers to the HTTP surface and the documented delivery.
+
+Boundary: batch C closed S7, S8 and S12 - every check from C1 to C231 carries a green proof at HEAD, the integration suite runs against real PostgreSQL, Keycloak and LocalStack, and Compose was verified with `docker compose up --build` plus health and metrics curls before teardown; only the fresh Verifier remains.
+
+Mid-build settlements: AD-044 was fulfilled by replacing `DenyAll` with the OIDC adapter; a real Keycloak container joined the integration `TestMain` and the realm's internal client gained `wagering:read` so internal OPENING reads stay internal-only; the 503 branch of `TestHttpResponseCodes` uses a boundary stub while all other statuses run against the real stack; C172/C173 reuse the C94/C96 scenario helpers under their own names; the C181 balance check compares stored balance against ledger credits minus debits, with the opening credit included in the ledger.
+
+Abandoned: none - no check was weakened, deleted or skipped; no Landing row was added or rewritten, and Flow/Impact were kept true without edits.
