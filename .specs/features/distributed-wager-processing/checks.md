@@ -73,25 +73,25 @@ Proof: `go test ./domain/... -run TestMoneyImmutability`
 **C20** - External financial command with currency other than BRL returns `422` with `UNSUPPORTED_CURRENCY` (AC 20)
 Proof: `go test ./... -run TestUnsupportedCurrency -tags integration`
 
-**C21** - Wallet never exposes a balance below `0.00` (AC 21)
+**C21** - Wallet never exposes a balance below `0.00` (AC 21) [done]
 Proof: `go test ./domain/... -run TestWalletNegativeBalance`
 
-**C22** - Entity creation rejects empty identity, invalid initial state, zero timestamp, or required zero Money (AC 22)
+**C22** - Entity creation rejects empty identity, invalid initial state, zero timestamp, or required zero Money (AC 22) [done]
 Proof: `go test ./domain/... -run TestEntityInvalidConstruction`
 
-**C23** - Terminal WagerTransaction receiving another transition returns classified invalid-transition error preserving terminal state (AC 23)
+**C23** - Terminal WagerTransaction receiving another transition returns classified invalid-transition error preserving terminal state (AC 23) [done]
 Proof: `go test ./domain/... -run TestTerminalStateTransition`
 
-**C24** - Entity rehydration emits no event, applies no movement, and increments no version (AC 24)
+**C24** - Entity rehydration emits no event, applies no movement, and increments no version (AC 24) [done]
 Proof: `go test ./domain/... -run TestRehydrationNoEffects`
 
-**C25** - Uninitialized Money, Wallet, WagerTransaction, or WalletLedgerEntry used by public domain operation is rejected (AC 25)
+**C25** - Uninitialized Money, Wallet, WagerTransaction, or WalletLedgerEntry used by public domain operation is rejected (AC 25) [done]
 Proof: `go test ./domain/... -run TestUninitializedRejection`
 
-**C26** - Domain error API is classifiable through `errors.Is` or `errors.As` (AC 26)
+**C26** - Domain error API is classifiable through `errors.Is` or `errors.As` (AC 26) [done]
 Proof: `go test ./domain/... -run TestErrorClassification`
 
-**C27** - Business rejection path returns classified domain result instead of invoking panic (AC 27)
+**C27** - Business rejection path returns classified domain result instead of invoking panic (AC 27) [done]
 Proof: `go test ./domain/... -run TestBusinessRejectionNoPanic`
 
 ### S3 - Carteira abre com saldo e ledger auditável (AC 28-43)
@@ -135,7 +135,7 @@ Proof: `go test ./... -run TestCrossCurrencyRejection -tags integration`
 **C40** - Debit that would produce negative balance is rejected before changing balance (AC 40)
 Proof: `go test ./... -run TestInsufficientFundsRejection -tags integration`
 
-**C41** - WalletLedgerEntry requires `balanceAfter = balanceBefore + money` for CREDIT or `balanceAfter = balanceBefore - money` for DEBIT (AC 41)
+**C41** - WalletLedgerEntry requires `balanceAfter = balanceBefore + money` for CREDIT or `balanceAfter = balanceBefore - money` for DEBIT (AC 41) [done]
 Proof: `go test ./domain/... -run TestLedgerArithmetic`
 
 **C42** - PostgreSQL schema allows at most one ledger entry per `(walletId, transactionId)` (AC 42)
@@ -185,10 +185,10 @@ Proof: `go test ./... -run TestImmediateTerminalTransition -tags integration`
 **C56** - Operation with unresolved reference commits as `PENDING_REFERENCE` with durable retry scheduling (AC 56)
 Proof: `go test ./... -run TestPendingReferenceCommit -tags integration`
 
-**C57** - State machine allows only `PENDING -> PENDING_REFERENCE|PROCESSED|REJECTED|FAILED` and `PENDING_REFERENCE -> PROCESSED|REJECTED|FAILED` (AC 57)
+**C57** - State machine allows only `PENDING -> PENDING_REFERENCE|PROCESSED|REJECTED|FAILED` and `PENDING_REFERENCE -> PROCESSED|REJECTED|FAILED` (AC 57) [done]
 Proof: `go test ./domain/... -run TestStateMachineTransitions`
 
-**C58** - Terminal WagerTransaction receives no later state change (AC 58)
+**C58** - Terminal WagerTransaction receives no later state change (AC 58) [done]
 Proof: `go test ./domain/... -run TestTerminalStateImmutable`
 
 **C59** - Transaction queried in `PENDING_REFERENCE` returns status and reference deadline without terminal balance (AC 59)
