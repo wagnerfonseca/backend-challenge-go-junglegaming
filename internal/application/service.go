@@ -26,13 +26,72 @@ func (SystemClock) Now() time.Time { return time.Now().UTC() }
 // WagerService implements the wallet and wager use cases shared by every
 // ingress. Construct it with manual injection.
 type WagerService struct {
-	store Store
-	clock Clock
+	store      Store
+	clock      Clock
+	reconciler Reconciler
 }
 
 // NewWagerService wires the use cases to their ports.
-func NewWagerService(store Store, clock Clock) *WagerService {
-	return &WagerService{store: store, clock: clock}
+func NewWagerService(store Store, clock Clock, options ...Option) *WagerService {
+	service := &WagerService{store: store, clock: clock}
+	for _, option := range options {
+		option(service)
+	}
+	return service
+}
+
+// SubmitWagerFromInbox processes one broker delivery through the same
+// financial use case as HTTP. The inbox record and the financial result commit
+// in the same SQL transaction, so no durable inbox row exists without its
+// domain result. A redelivery of a completed message with the same digest is
+// reported as a duplicate without a second financial movement; a different
+// digest is a permanent INBOX_PAYLOAD_CONFLICT.
+func (s *WagerService) SubmitWagerFromInbox(ctx context.Context, cmd SubmitWagerCommand, delivery InboxDelivery) (WagerResult, bool, error) {
+	if err := cmd.Validate(); err != nil {
+		return WagerResult{}, false, err
+	}
+	if err := delivery.Validate(); err != nil {
+		return WagerResult{}, false, err
+	}
+	projection := cmd.projection()
+	digest, err := DigestOf(projection)
+	if err != nil {
+		return WagerResult{}, false, wrapInvariant(err)
+	}
+	correlation := correlationOrNew(cmd.CorrelationID)
+	var result WagerResult
+	var duplicate bool
+	var lastConflict error
+	for attempt := 0; attempt < maxConcurrentWriteRetries; attempt++ {
+		duplicate = false
+		err := s.store.InTx(ctx, func(ctx context.Context, repos Repositories) error {
+			found, storedDigest, err := repos.Inbox.Begin(ctx, delivery)
+			if err != nil {
+				return err
+			}
+			if found {
+				if storedDigest == delivery.Digest {
+					duplicate = true
+					return nil
+				}
+				return conflictError(CodeInboxPayloadConflict, "message id was already received with a different payload", nil)
+			}
+			result, err = s.submitWithinTx(ctx, repos, cmd, digest, correlation)
+			if err != nil {
+				return err
+			}
+			return repos.Inbox.Complete(ctx, delivery.ConsumerName, delivery.MessageID, s.clock.Now())
+		})
+		if err == nil {
+			return result, duplicate, nil
+		}
+		if errors.Is(err, ErrConcurrentWrite) {
+			lastConflict = err
+			continue
+		}
+		return WagerResult{}, false, err
+	}
+	return WagerResult{}, false, transientError(fmt.Errorf("inbox submission could not observe a stable result after retries: %w", lastConflict))
 }
 
 // OpenWallet creates one wallet per player/currency and, for a positive

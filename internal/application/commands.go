@@ -134,6 +134,23 @@ func (c ResolvePendingReferenceCommand) Validate() error {
 	return nil
 }
 
+// Validate reports whether the delivery carries a broker identity and digest.
+func (d InboxDelivery) Validate() error {
+	if d.ConsumerName == "" {
+		return contractError(CodeInvalidRequest, "consumer name is required")
+	}
+	if d.MessageID == "" {
+		return contractError(CodeInvalidRequest, "messageId is required")
+	}
+	if len(d.Digest) != 64 {
+		return contractError(CodeInvalidRequest, "payload digest must be a sha256 hex value")
+	}
+	if d.ReceivedAt.IsZero() {
+		return contractError(CodeInvalidRequest, "receipt time is required")
+	}
+	return nil
+}
+
 // WalletView is the application-level representation of a wallet.
 type WalletView struct {
 	ID        financial.WalletID

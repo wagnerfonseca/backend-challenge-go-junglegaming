@@ -26,6 +26,8 @@ const (
 	CodeExternalTransactionConflict ErrorCode = "EXTERNAL_TRANSACTION_CONFLICT"
 	CodeNotFound                    ErrorCode = "NOT_FOUND"
 	CodeServiceUnavailable          ErrorCode = "SERVICE_UNAVAILABLE"
+	CodeInboxPayloadConflict        ErrorCode = "INBOX_PAYLOAD_CONFLICT"
+	CodeInvalidMessage              ErrorCode = "INVALID_MESSAGE"
 )
 
 // Class sentinels. Every error returned by this package matches exactly one of

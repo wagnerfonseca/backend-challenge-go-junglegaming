@@ -6,6 +6,7 @@ import (
 
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/event"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // WalletRepository persists the wallet aggregate.
@@ -63,6 +64,44 @@ type OutboxRepository interface {
 	Insert(ctx context.Context, envelope event.Envelope, now time.Time) error
 }
 
+// InboxDelivery identifies one received broker message.
+type InboxDelivery struct {
+	ConsumerName string
+	MessageID    string
+	Digest       string
+	ReceivedAt   time.Time
+}
+
+// InboxRepository records received deliveries so a redelivery never reapplies
+// money. Completion commits in the same SQL transaction as the financial
+// change it acknowledges.
+type InboxRepository interface {
+	// Begin inserts the delivery record when it is new. When the delivery
+	// already exists it reports found=true and the stored payload digest.
+	Begin(ctx context.Context, delivery InboxDelivery) (found bool, digest string, err error)
+	// Complete marks the delivery as durably handled.
+	Complete(ctx context.Context, consumerName, messageID string, completedAt time.Time) error
+}
+
+// OutboxRecord is one claimed event snapshot awaiting publication.
+type OutboxRecord struct {
+	EventID     string
+	EventType   string
+	AggregateID string
+	Payload     []byte
+	Attempts    int
+}
+
+// OutboxStore claims and confirms outbox publications with a recoverable
+// lease. It is implemented by the PostgreSQL adapter and consumed by the
+// outbox publisher.
+type OutboxStore interface {
+	ClaimDueEvents(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]OutboxRecord, error)
+	MarkPublished(ctx context.Context, eventID string, publishedAt time.Time) error
+	RescheduleEvent(ctx context.Context, eventID string, now, nextAttemptAt time.Time, attempts int) error
+	OldestPendingAge(ctx context.Context, now time.Time) (time.Duration, bool, error)
+}
+
 // Repositories bundles the ports bound to one transaction or connection.
 type Repositories struct {
 	Wallets        WalletRepository
@@ -70,6 +109,7 @@ type Repositories struct {
 	Ledger         LedgerRepository
 	ReversalClaims ReversalClaimRepository
 	Outbox         OutboxRepository
+	Inbox          InboxRepository
 }
 
 // Store opens transactions and hands out repositories bound to them.
@@ -82,4 +122,22 @@ type Store interface {
 // testable without changing the domain.
 type Clock interface {
 	Now() time.Time
+}
+
+// ReconciliationEntry is one ledger posting summarized for reconciliation.
+type ReconciliationEntry struct {
+	Direction financial.Direction
+	Amount    money.Money
+}
+
+// ReconciliationSnapshot is one consistent view of a wallet and its ledger.
+type ReconciliationSnapshot struct {
+	Balance money.Money
+	Entries []ReconciliationEntry
+}
+
+// Reconciler reads a wallet and its complete ledger in one repeatable-read
+// snapshot without taking write locks.
+type Reconciler interface {
+	ReconcileRead(ctx context.Context, walletID financial.WalletID) (ReconciliationSnapshot, bool, error)
 }

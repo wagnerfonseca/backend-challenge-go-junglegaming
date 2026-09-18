@@ -2,12 +2,14 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/application"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
 )
 
 // executor is the subset shared by pgxpool.Pool and pgx.Tx.
@@ -25,6 +27,12 @@ type Store struct {
 // NewStore builds a store over an existing pool.
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+// ClaimDueReferences leases due PENDING_REFERENCE transactions for the
+// reference worker.
+func (s *Store) ClaimDueReferences(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]financial.WagerTransaction, error) {
+	return (&transactionRepository{db: s.pool}).ClaimDueReferences(ctx, now, limit, lease)
 }
 
 // Repositories returns ports bound to the pool for non-transactional reads.
@@ -57,5 +65,6 @@ func repositoriesFor(db executor) application.Repositories {
 		Ledger:         &ledgerRepository{db: db},
 		ReversalClaims: &claimRepository{db: db},
 		Outbox:         &outboxRepository{db: db},
+		Inbox:          &inboxRepository{db: db},
 	}
 }
