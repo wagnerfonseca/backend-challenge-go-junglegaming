@@ -49,25 +49,25 @@ Proof: `grep -rE 'var\s+\w+\s+(Client|DB|Pool|Client)\b' pkg/ domain/ || echo no
 
 ### S2 - Dinheiro e entidades preservam invariantes sem infraestrutura (AC 13-27)
 
-**C13** - Money never passes through `float32` or `float64` in any code path (AC 13)
+**C13** - Money never passes through `float32` or `float64` in any code path (AC 13) [done]
 Proof: `grep -rE 'float32|float64' domain/money/ || echo no-floats`
 
-**C14** - Parsing `25.00` BRL produces exactly `2500` minor units and serializes back to `{"amount":"25.00","currency":"BRL"}` (AC 14)
+**C14** - Parsing `25.00` BRL produces exactly `2500` minor units and serializes back to `{"amount":"25.00","currency":"BRL"}` (AC 14) [done]
 Proof: `go test ./domain/... -run TestMoneyParseAndSerialize`
 
-**C15** - Empty, negative, NaN, Infinity, scientific notation, leading zeroes, or non-two-decimal amounts are rejected without rounding (AC 15)
+**C15** - Empty, negative, NaN, Infinity, scientific notation, leading zeroes, or non-two-decimal amounts are rejected without rounding (AC 15) [done]
 Proof: `go test ./domain/... -run TestMoneyInvalidInputs`
 
-**C16** - Amount exceeding `92233720368547758.07` returns a classified overflow error (AC 16)
+**C16** - Amount exceeding `92233720368547758.07` returns a classified overflow error (AC 16) [done]
 Proof: `go test ./domain/... -run TestMoneyOverflow`
 
-**C17** - Addition, subtraction, or negation exceeding int64 range returns a classified overflow error with no wrapped value (AC 17)
+**C17** - Addition, subtraction, or negation exceeding int64 range returns a classified overflow error with no wrapped value (AC 17) [done]
 Proof: `go test ./domain/... -run TestMoneyArithmeticOverflow`
 
-**C18** - Arithmetic or comparison combining different currencies returns a classified currency-mismatch error (AC 18)
+**C18** - Arithmetic or comparison combining different currencies returns a classified currency-mismatch error (AC 18) [done]
 Proof: `go test ./domain/... -run TestMoneyCurrencyMismatch`
 
-**C19** - Money value is immutable after construction (AC 19)
+**C19** - Money value is immutable after construction (AC 19) [done]
 Proof: `go test ./domain/... -run TestMoneyImmutability`
 
 **C20** - External financial command with currency other than BRL returns `422` with `UNSUPPORTED_CURRENCY` (AC 20)
@@ -602,19 +602,19 @@ Proof: `gofmt -l . && echo all-formatted`
 
 ### S13 - Operações monetárias com valor exato (AC 190-194)
 
-**C190** - Zero created for BRL serializes as {"amount":"0.00","currency":"BRL"} (AC 190)
+**C190** - Zero created for BRL serializes as {"amount":"0.00","currency":"BRL"} (AC 190) [done]
 Proof: `go test ./domain/... -run TestMoneyZeroSerialization`
 
-**C191** - Adding `10.00 BRL` and `2.50 BRL` returns `12.50 BRL` (AC 191)
+**C191** - Adding `10.00 BRL` and `2.50 BRL` returns `12.50 BRL` (AC 191) [done]
 Proof: `go test ./domain/... -run TestMoneyAddition`
 
-**C192** - Subtracting `2.50 BRL` from `10.00 BRL` returns `7.50 BRL` (AC 192)
+**C192** - Subtracting `2.50 BRL` from `10.00 BRL` returns `7.50 BRL` (AC 192) [done]
 Proof: `go test ./domain/... -run TestMoneySubtraction`
 
-**C193** - Negating `2.50 BRL` returns `-2.50 BRL` (AC 193)
+**C193** - Negating `2.50 BRL` returns `-2.50 BRL` (AC 193) [done]
 Proof: `go test ./domain/... -run TestMoneyNegation`
 
-**C194** - Comparing `2.50 BRL` with `10.00 BRL` reports first less than second (AC 194)
+**C194** - Comparing `2.50 BRL` with `10.00 BRL` reports first less than second (AC 194) [done]
 Proof: `go test ./domain/... -run TestMoneyComparison`
 
 ### S14 - Escopos e broker vinculam entrada à identidade autorizada (AC 195-204)
@@ -793,4 +793,12 @@ Evidence:
 
 ## Handoff
 
-17 slices · 231 criteria · 127 checks · 20 Landing doors · under 150k budget for build
+Three batches, each carrying whole slices, handed off only on green:
+
+| Batch | Slices | Surface at handoff | Estimate |
+| --- | --- | --- | --- |
+| A - financial core | S2, S13, S3, S4, S5, S15 | in-process: domain, application, PostgreSQL adapter, migrations, unit and integration proofs | ~40 files · ~160 KB · ~40k |
+| B - runtime | S1, S6, S9, S10, S11, S14, S16 | composed processes: Fx, HTTP, SQS, workers, config, metrics, queue policies | ~25 files · ~120 KB · ~30k |
+| C - surface and delivery | S7, S8, S12 | the checkout another person runs: OIDC, HTTP reads, three-instance suite, Compose, docs | ~25 files · ~125 KB · ~31k |
+
+Estimates are `wc -c` over the files each batch touches divided by four; total ~101k under the 150k budget. Batch B enters at the change from in-process calls to broker and server composition; batch C at the change from workers to the HTTP surface and the documented delivery.
