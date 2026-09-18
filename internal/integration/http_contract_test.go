@@ -70,7 +70,7 @@ func TestRateLimit256(t *testing.T) {
 	}
 	status, data := runtime.postWallet(openWalletJSON{PlayerID: financial.NewPlayerID().String(), InitialBalance: moneyJSON{Amount: "10.00", Currency: "BRL"}})
 	requireStatus(t, status, http.StatusServiceUnavailable, data)
-	if got := runtime.lastRetryAfter; got != "1" {
+	if got := runtime.retryAfter(); got != "1" {
 		t.Errorf("Retry-After = %q, want 1", got)
 	}
 	if envelope := decodeError(t, data); envelope.Error.Code != "SERVICE_UNAVAILABLE" {
@@ -192,7 +192,7 @@ func TestCorrelationPropagation(t *testing.T) {
 	body, _ := json.Marshal(wagerJSONOf(command))
 	status, data := runtime.request(http.MethodPost, "/wagering/transactions", string(body), headers)
 	requireStatus(t, status, 200, data)
-	if got := runtime.lastCorrelation; got != correlation {
+	if got := runtime.correlation(); got != correlation {
 		t.Errorf("X-Correlation-ID = %q, want %q", got, correlation)
 	}
 	if !hasProcessedEventWithCorrelation(runtime.harness, view.ID, correlation) {
