@@ -42,6 +42,11 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	// A child process entry point runs one command batch against the shared
+	// database without starting containers.
+	if payload := os.Getenv("WAGER_CHILD_COMMANDS"); payload != "" {
+		os.Exit(runChildCommands(payload))
+	}
 	// The Ryuk reaper hardcodes the Docker "bridge" network, which does not
 	// exist on Podman-based daemons; this harness terminates its own containers.
 	if _, set := os.LookupEnv("TESTCONTAINERS_RYUK_DISABLED"); !set {
