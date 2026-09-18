@@ -113,6 +113,18 @@ func TestLossInvalidAmount(t *testing.T) {
 	if h.transactionExists(loss.ProviderID.String(), loss.ExternalTransactionID) {
 		t.Error("an invalid LOSS persisted a transaction")
 	}
+
+	// C68 transport boundary: POST /wagering/transactions returns 422 INVALID_LOSS_AMOUNT.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("100.00")
+	status, data := runtime.postWager(wagerJSONOf(runtime.harness.command(httpView, financial.KindLoss, "1.00")), "loss-key-"+newCorrelation())
+	requireStatus(t, status, 422, data)
+	if envelope := decodeError(t, data); envelope.Error.Code != "INVALID_LOSS_AMOUNT" {
+		t.Errorf("code = %s, want INVALID_LOSS_AMOUNT", envelope.Error.Code)
+	}
+	if got := runtime.harness.transactionsForWallet(httpView.ID); got != 1 {
+		t.Errorf("HTTP invalid LOSS persisted %d transactions, want 1 (the opening)", got)
+	}
 }
 
 // C69 - A processed LOSS appends no ledger entry.
@@ -264,6 +276,19 @@ func TestZeroAmountRejection(t *testing.T) {
 			t.Errorf("%s with zero amount persisted a transaction", kind)
 		}
 	}
+
+	// C74 transport boundary: POST /wagering/transactions returns 422.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("100.00")
+	zero := runtime.harness.command(httpView, financial.KindBet, "0.00")
+	status, data := runtime.postWager(wagerJSONOf(zero), "zero-key-"+newCorrelation())
+	requireStatus(t, status, 422, data)
+	if envelope := decodeError(t, data); envelope.Error.Code != "INVALID_REQUEST" {
+		t.Errorf("code = %s, want INVALID_REQUEST", envelope.Error.Code)
+	}
+	if runtime.harness.transactionExists(zero.ProviderID.String(), zero.ExternalTransactionID) {
+		t.Error("HTTP zero-amount BET persisted a transaction")
+	}
 }
 
 // C75 - REFUND or ROLLBACK without referenceExternalTransactionId is a
@@ -278,6 +303,19 @@ func TestReversalMissingReference(t *testing.T) {
 	}
 	if got := h.transactionsForWallet(view.ID); got != 1 {
 		t.Errorf("transactions = %d, want 1 (only the opening)", got)
+	}
+
+	// C75 transport boundary: POST /wagering/transactions returns 422 REFERENCE_REQUIRED.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("100.00")
+	refund := runtime.harness.command(httpView, financial.KindRefund, "25.00")
+	status, data := runtime.postWager(wagerJSONOf(refund), "refund-key-"+newCorrelation())
+	requireStatus(t, status, 422, data)
+	if envelope := decodeError(t, data); envelope.Error.Code != "REFERENCE_REQUIRED" {
+		t.Errorf("code = %s, want REFERENCE_REQUIRED", envelope.Error.Code)
+	}
+	if runtime.harness.transactionExists(refund.ProviderID.String(), refund.ExternalTransactionID) {
+		t.Error("HTTP reference-less REFUND persisted a transaction")
 	}
 }
 

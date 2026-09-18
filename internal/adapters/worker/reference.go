@@ -126,6 +126,13 @@ func (w *ReferenceWorker) ResolveOnce(ctx context.Context) (int, error) {
 		if result.IsTerminal() {
 			resolved++
 			w.metrics.WagerTransactionsTotal.Inc(string(result.Kind), string(result.State), "reference")
+			if result.State == financial.StateFailed {
+				w.logger.ErrorContext(ctx, "wager transaction failed permanently",
+					"transactionId", result.TransactionID.String(),
+					"failureCode", string(result.FailureCode),
+					"kind", string(result.Kind),
+				)
+			}
 		}
 	}
 	return resolved, nil

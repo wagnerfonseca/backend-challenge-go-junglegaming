@@ -39,6 +39,22 @@ func TestWalletOpenPositiveBalance(t *testing.T) {
 	if view.Version != 1 {
 		t.Errorf("version = %d, want 1", view.Version)
 	}
+
+	// C28 transport boundary: POST /wallets returns 201 with the wallet view.
+	runtime := newHTTPRuntime(t)
+	httpPlayer := financial.NewPlayerID()
+	status, data := runtime.postWallet(openWalletJSON{
+		PlayerID:       httpPlayer.String(),
+		InitialBalance: moneyJSON{Amount: "1000.00", Currency: "BRL"},
+	})
+	requireStatus(t, status, 201, data)
+	opened := decodeJSONBody[walletJSON](t, data)
+	if opened.ID == "" || opened.PlayerID != httpPlayer.String() {
+		t.Errorf("HTTP wallet identity = %q/%q, want a new id for %s", opened.ID, opened.PlayerID, httpPlayer)
+	}
+	if opened.Balance.Amount != "1000.00" || opened.Balance.Currency != "BRL" || opened.Version != 1 {
+		t.Errorf("HTTP wallet balance/version = %+v/%d, want 1000.00 BRL/1", opened.Balance, opened.Version)
+	}
 }
 
 // C29 - A positive opening persists exactly one PROCESSED OPENING transaction
@@ -225,6 +241,21 @@ func TestWalletDuplicate(t *testing.T) {
 	}
 	if got := h.ledgerForWallet(first.ID); got != 1 {
 		t.Errorf("ledger entries = %d, want 1", got)
+	}
+
+	// C36 transport boundary: the duplicate open returns 409 WALLET_ALREADY_EXISTS.
+	runtime := newHTTPRuntime(t)
+	status, data := runtime.postWallet(openWalletJSON{
+		PlayerID:       player.String(),
+		InitialBalance: moneyJSON{Amount: "500.00", Currency: "BRL"},
+	})
+	requireStatus(t, status, 409, data)
+	envelope := decodeError(t, data)
+	if envelope.Error.Code != "WALLET_ALREADY_EXISTS" {
+		t.Errorf("code = %s, want WALLET_ALREADY_EXISTS", envelope.Error.Code)
+	}
+	if got := h.walletBalance(first.ID).MinorUnits(); got != 100000 {
+		t.Errorf("balance after HTTP duplicate = %d, want 100000", got)
 	}
 }
 

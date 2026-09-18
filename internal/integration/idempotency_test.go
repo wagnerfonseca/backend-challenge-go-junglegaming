@@ -3,17 +3,24 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	httpadapter "github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/http"
 	deadapter "github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/postgres"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/sqs/consumer"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/application"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/event"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
@@ -48,6 +55,20 @@ func TestMissingIdempotencyKey(t *testing.T) {
 	if h.transactionExists(cmd.ProviderID.String(), cmd.ExternalTransactionID) {
 		t.Error("a command without an idempotency key persisted a transaction")
 	}
+
+	// C45 transport boundary: POST /wagering/transactions returns 400
+	// IDEMPOTENCY_KEY_REQUIRED and persists nothing.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("100.00")
+	httpCommand := runtime.harness.command(httpView, financial.KindBet, "25.00")
+	status, data := runtime.postWager(wagerJSONOf(httpCommand), "")
+	requireStatus(t, status, 400, data)
+	if envelope := decodeError(t, data); envelope.Error.Code != "IDEMPOTENCY_KEY_REQUIRED" {
+		t.Errorf("code = %s, want IDEMPOTENCY_KEY_REQUIRED", envelope.Error.Code)
+	}
+	if runtime.harness.transactionExists(httpCommand.ProviderID.String(), httpCommand.ExternalTransactionID) {
+		t.Error("HTTP request without Idempotency-Key persisted a transaction")
+	}
 }
 
 // C46 - A valid independent operation returns the transaction identity, a
@@ -68,6 +89,27 @@ func TestValidOperationResponse(t *testing.T) {
 	}
 	if result.IdempotentReplay {
 		t.Error("idempotentReplay = true, want false")
+	}
+
+	// C46 transport boundary: POST /wagering/transactions returns 200 with
+	// transactionId, terminal status, persisted balance and idempotentReplay:false.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("1000.00")
+	httpCommand := runtime.harness.command(httpView, financial.KindBet, "25.00")
+	status, data := runtime.postWager(wagerJSONOf(httpCommand), httpCommand.IdempotencyKey.String())
+	requireStatus(t, status, 200, data)
+	httpResult := decodeJSONBody[wagerResultJSON](t, data)
+	if httpResult.TransactionID == "" {
+		t.Error("HTTP transactionId is empty")
+	}
+	if httpResult.Status != "PROCESSED" {
+		t.Errorf("HTTP status = %s, want PROCESSED", httpResult.Status)
+	}
+	if httpResult.Balance == nil || httpResult.Balance.Amount != "975.00" || httpResult.Balance.Currency != "BRL" {
+		t.Errorf("HTTP balance = %+v, want 975.00 BRL", httpResult.Balance)
+	}
+	if httpResult.IdempotentReplay {
+		t.Error("HTTP idempotentReplay = true, want false")
 	}
 }
 
@@ -151,6 +193,20 @@ func TestIdempotencyConflict(t *testing.T) {
 	if got := h.walletBalance(view.ID).MinorUnits(); got != 97500 {
 		t.Errorf("balance = %d, want 97500", got)
 	}
+
+	// C49 transport boundary: POST returns 409 IDEMPOTENCY_CONFLICT.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("1000.00")
+	firstHTTP := runtime.harness.command(httpView, financial.KindBet, "25.00")
+	status, data := runtime.postWager(wagerJSONOf(firstHTTP), firstHTTP.IdempotencyKey.String())
+	requireStatus(t, status, 200, data)
+	conflict := runtime.harness.command(httpView, financial.KindBet, "25.01")
+	conflict.IdempotencyKey = firstHTTP.IdempotencyKey
+	status, data = runtime.postWager(wagerJSONOf(conflict), conflict.IdempotencyKey.String())
+	requireStatus(t, status, 409, data)
+	if envelope := decodeError(t, data); envelope.Error.Code != "IDEMPOTENCY_CONFLICT" {
+		t.Errorf("code = %s, want IDEMPOTENCY_CONFLICT", envelope.Error.Code)
+	}
 }
 
 // C50 - The same (providerId, externalTransactionId) under a different key
@@ -176,12 +232,25 @@ func TestExternalTransactionConflict(t *testing.T) {
 	if got := h.ledgerForWallet(view.ID); got != 2 {
 		t.Errorf("ledger entries = %d, want 2", got)
 	}
+
+	// C50 transport boundary: POST returns 409 EXTERNAL_TRANSACTION_CONFLICT.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("1000.00")
+	firstHTTP := runtime.harness.command(httpView, financial.KindBet, "25.00")
+	status, data := runtime.postWager(wagerJSONOf(firstHTTP), firstHTTP.IdempotencyKey.String())
+	requireStatus(t, status, 200, data)
+	secondHTTP := firstHTTP
+	secondHTTP.IdempotencyKey = financial.IdempotencyKey("key-" + newCorrelation())
+	status, data = runtime.postWager(wagerJSONOf(secondHTTP), secondHTTP.IdempotencyKey.String())
+	requireStatus(t, status, 409, data)
+	if envelope := decodeError(t, data); envelope.Error.Code != "EXTERNAL_TRANSACTION_CONFLICT" {
+		t.Errorf("code = %s, want EXTERNAL_TRANSACTION_CONFLICT", envelope.Error.Code)
+	}
 }
 
 // C51 - Equivalent commands submitted for the two ingresses converge on one
 // WagerTransaction and at most one financial movement, because both adapters
-// will invoke this same use case. The literal HTTP and SQS adapters are
-// deferred to batches B and C.
+// invoke the same use case.
 func TestHTTPSQSIddempotency(t *testing.T) {
 	h := newHarness(t)
 	view := h.openWallet("1000.00")
@@ -200,6 +269,29 @@ func TestHTTPSQSIddempotency(t *testing.T) {
 	}
 	if got := h.outboxCountOfType(view.ID, string(event.TypeWagerTransactionProcessed)); got != 2 {
 		t.Errorf("processed events = %d, want 2 (opening and one bet)", got)
+	}
+
+	// C51 transport boundary: the same command over HTTP and over the real
+	// consumer produces one transaction and one debit.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("1000.00")
+	command := runtime.harness.command(httpView, financial.KindBet, "25.00")
+	status, data := runtime.postWager(wagerJSONOf(command), command.IdempotencyKey.String())
+	requireStatus(t, status, 200, data)
+	broker := &sqsFake{}
+	messageID := "message-" + newCorrelation()
+	broker.enqueue(sqsMessage(messageID, "sender-a", 1, envelopeJSON(t, envelopeFor(t, command, messageID))))
+	if err := newConsumer(runtime.harness, broker).PollOnce(context.Background()); err != nil {
+		t.Fatalf("processing SQS delivery: %v", err)
+	}
+	if got := runtime.harness.transactionsForWallet(httpView.ID); got != 2 {
+		t.Errorf("transactions after HTTP+SQS = %d, want 2 (opening and one bet)", got)
+	}
+	if got := runtime.harness.ledgerForWallet(httpView.ID); got != 2 {
+		t.Errorf("ledger entries after HTTP+SQS = %d, want 2", got)
+	}
+	if handles := broker.deletedHandles(); len(handles) != 1 || handles[0] != "receipt-"+messageID {
+		t.Errorf("deleted handles = %v, want the duplicate message deleted", handles)
 	}
 }
 
@@ -380,6 +472,26 @@ func TestPendingReferenceQuery(t *testing.T) {
 	if result.ObservedBalance.IsInitialized() {
 		t.Error("pending transaction reported a terminal balance")
 	}
+
+	// C59 transport boundary: GET /wagering/transactions/{id} returns 200 with
+	// the exact status and deadline and no terminal balance.
+	runtime := newHTTPRuntime(t)
+	httpView := runtime.harness.openWallet("1000.00")
+	httpRefund := runtime.harness.command(httpView, financial.KindRefund, "25.00")
+	httpRefund.ReferenceExternalID = newExternalID("bet")
+	httpPending := runtime.harness.mustSubmit(httpRefund)
+	status, data := runtime.getTransaction(httpPending.TransactionID.String())
+	requireStatus(t, status, 200, data)
+	body := decodeJSONBody[wagerResultJSON](t, data)
+	if body.Status != "PENDING_REFERENCE" {
+		t.Errorf("HTTP status = %s, want PENDING_REFERENCE", body.Status)
+	}
+	if body.ReferenceDeadline == nil {
+		t.Error("HTTP reference deadline is missing")
+	}
+	if body.Balance != nil {
+		t.Errorf("HTTP pending response reported balance %+v, want none", body.Balance)
+	}
 }
 
 // C60 - A rejected transaction persists a stable failureCode and the balance
@@ -491,6 +603,61 @@ func TestDatabaseUnavailableHandling(t *testing.T) {
 	}
 	if got := h.walletBalance(view.ID).MinorUnits(); got != 97500 {
 		t.Errorf("balance = %d, want 97500", got)
+	}
+
+	// C62 transport boundary: HTTP returns 503 before a durable commit and the
+	// SQS consumer leaves the message unacknowledged for retry.
+	runtime := newHTTPRuntime(t)
+	offlineConfig, err := pgxpool.ParseConfig(testDSN)
+	if err != nil {
+		t.Fatalf("parsing dsn: %v", err)
+	}
+	offlineConfig.ConnConfig.User = "wager_app"
+	offlineConfig.ConnConfig.Password = "wager_app_local"
+	offlinePool, err := pgxpool.NewWithConfig(context.Background(), offlineConfig)
+	if err != nil {
+		t.Fatalf("opening offline pool: %v", err)
+	}
+	offlineService := application.NewWagerService(deadapter.NewStore(offlinePool), &testClock{now: h.clock.Now()})
+	offlinePool.Close()
+	httpView := runtime.harness.openWallet("1000.00")
+	httpCommand := runtime.harness.command(httpView, financial.KindBet, "25.00")
+	offlineHandler := httpadapter.NewHandler(httpadapter.Config{
+		UseCases:      offlineService,
+		Authenticator: allScopes("provider-a"),
+	})
+	offlineServer := httptest.NewServer(offlineHandler.Routes())
+	defer offlineServer.Close()
+	encoded, _ := json.Marshal(wagerJSONOf(httpCommand))
+	request, _ := http.NewRequest(http.MethodPost, offlineServer.URL+"/wagering/transactions", bytes.NewReader(encoded))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", httpCommand.IdempotencyKey.String())
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("offline HTTP request: %v", err)
+	}
+	offlineBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	requireStatus(t, response.StatusCode, http.StatusServiceUnavailable, offlineBody)
+
+	broker := &sqsFake{}
+	messageID := "message-" + newCorrelation()
+	broker.enqueue(sqsMessage(messageID, "sender-a", 1, envelopeJSON(t, envelopeFor(t, httpCommand, messageID))))
+	offlineConsumer := consumer.New(consumer.Config{
+		QueueURL:     "http://fake/wager-transactions.fifo",
+		ConsumerName: "wager-transactions",
+		ProviderForSender: func(string) (string, bool) {
+			return "provider-a", true
+		},
+	}, broker, offlineService)
+	if err := offlineConsumer.PollOnce(context.Background()); err != nil {
+		t.Fatalf("offline consumer pass: %v", err)
+	}
+	if handles := broker.deletedHandles(); len(handles) != 0 {
+		t.Errorf("offline SQS handling deleted %v, want no acknowledgement", handles)
+	}
+	if changes := broker.visibilityChanges(); len(changes) == 0 {
+		t.Error("offline SQS handling did not release the message for redelivery")
 	}
 }
 

@@ -111,7 +111,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("POST /wallets", base(business(middleware.ScopeWalletsWrite, http.HandlerFunc(h.handleOpenWallet))))
 	mux.Handle("POST /wagering/transactions", base(business(middleware.ScopeWageringWrite, http.HandlerFunc(h.handleSubmitWager))))
 	mux.Handle("GET /wagering/transactions/{transactionId}", base(business(middleware.ScopeWageringRead, http.HandlerFunc(h.handleTransactionByID))))
-	mux.Handle("POST /wallets/{walletId}/reconciliation", base(business(middleware.ScopeReconciliationExecute, http.HandlerFunc(h.handleReconcile))))
+	mux.Handle("POST /wallets/{walletId}/reconciliation", base(protected(middleware.ScopeReconciliationExecute,
+		middleware.RateLimit(h.concurrency)(middleware.MaxBytes(h.maxBodyBytes)(http.HandlerFunc(h.handleReconcile))))))
 	mux.Handle("/", base(http.HandlerFunc(h.handleNotFound)))
 	return mux
 }

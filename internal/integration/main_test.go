@@ -22,8 +22,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/testcontainers/testcontainers-go"
+	tclocalstack "github.com/testcontainers/testcontainers-go/modules/localstack"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/failpoint"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/metrics"
 	deadapter "github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/postgres"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/application"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/event"
@@ -32,13 +36,14 @@ import (
 )
 
 var (
-	testDSN   string
-	adminPool *pgxpool.Pool
+	testDSN            string
+	adminPool          *pgxpool.Pool
+	localstackEndpoint string
 )
 
 func TestMain(m *testing.M) {
 	// The Ryuk reaper hardcodes the Docker "bridge" network, which does not
-	// exist on Podman-based daemons; this harness terminates its own container.
+	// exist on Podman-based daemons; this harness terminates its own containers.
 	if _, set := os.LookupEnv("TESTCONTAINERS_RYUK_DISABLED"); !set {
 		_ = os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
 	}
@@ -68,9 +73,33 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "opening admin pool: %v\n", err)
 		os.Exit(1)
 	}
+
+	localstackContainer, err := tclocalstack.Run(ctx, "localstack/localstack:3.8",
+		testcontainers.WithEnv(map[string]string{"SERVICES": "sqs"}),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "starting localstack container: %v\n", err)
+		os.Exit(1)
+	}
+	host, err := localstackContainer.Host(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolving localstack host: %v\n", err)
+		os.Exit(1)
+	}
+	mappedPort, err := localstackContainer.MappedPort(ctx, "4566/tcp")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolving localstack port: %v\n", err)
+		os.Exit(1)
+	}
+	localstackEndpoint = "http://" + host + ":" + mappedPort.Port()
+	_ = os.Setenv("AWS_ACCESS_KEY_ID", "test")
+	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+	_ = os.Setenv("AWS_REGION", "us-east-1")
+
 	code := m.Run()
 	adminPool.Close()
 	_ = container.Terminate(ctx)
+	_ = localstackContainer.Terminate(ctx)
 	os.Exit(code)
 }
 
@@ -123,11 +152,13 @@ func (c *testClock) Advance(delta time.Duration) {
 // harness wires the application to the real database using the application
 // database role, so grants, locks and constraints are exercised for real.
 type harness struct {
-	t       *testing.T
-	service *application.WagerService
-	store   *deadapter.Store
-	appPool *pgxpool.Pool
-	clock   *testClock
+	t          *testing.T
+	service    *application.WagerService
+	store      *deadapter.Store
+	appPool    *pgxpool.Pool
+	clock      *testClock
+	metrics    *metrics.Metrics
+	failpoints *failpoint.Set
 }
 
 func newHarness(t *testing.T) *harness {
@@ -147,13 +178,18 @@ func newHarness(t *testing.T) *harness {
 	clock := &testClock{now: time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)}
 	store := deadapter.NewStore(pool)
 	return &harness{
-		t:       t,
-		service: application.NewWagerService(store, clock),
-		store:   store,
-		appPool: pool,
-		clock:   clock,
+		t:          t,
+		service:    application.NewWagerService(store, clock, application.WithReconciler(store)),
+		store:      store,
+		appPool:    pool,
+		clock:      clock,
+		metrics:    metrics.New(metrics.NewRegistry()),
+		failpoints: failpoint.New(nil),
 	}
 }
+
+// runtimeMetrics returns the metric bundle of this harness.
+func (h *harness) runtimeMetrics() *metrics.Metrics { return h.metrics }
 
 func (h *harness) ctx() context.Context { return context.Background() }
 
