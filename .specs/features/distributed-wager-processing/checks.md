@@ -585,10 +585,10 @@ Proof: `go test -race ./...`
 **C184** - `go vet ./...` exits 0 (AC 184) [done]
 Proof: `go vet ./...`
 
-**C185** - README uses Portuguese documenting prerequisites, env vars, queue/IdP identities, migrations, startup, authenticated calls, test commands, three-instance execution, DLQ redrive, fault simulation (AC 185)
+**C185** - README uses Portuguese documenting prerequisites, env vars, queue/IdP identities, migrations, startup, authenticated calls, test commands, three-instance execution, DLQ redrive, fault simulation (AC 185) [done]
 Proof: `grep -E 'pré-requisitos|variáveis de ambiente|filas|IdP|migração|inicialização|autenticado|instâncias|DLQ|falha' README.md | head -10`
 
-**C186** - ARCHITECTURE.md uses decision-oriented Portuguese covering Money, SQL boundary, idempotency, locks, state machine, failure codes, transient/permanent classifier, pending-reference policy, reversals, inbox, SQS visibility/redrive, outbox, outbound consumption, auth, authorization, Fx lifecycle, shutdown, limitations, unfinished work (AC 186)
+**C186** - ARCHITECTURE.md uses decision-oriented Portuguese covering Money, SQL boundary, idempotency, locks, state machine, failure codes, transient/permanent classifier, pending-reference policy, reversals, inbox, SQS visibility/redrive, outbox, outbound consumption, auth, authorization, Fx lifecycle, shutdown, limitations, unfinished work (AC 186) [done]
 Proof: `grep -E 'Money|SQL|idempotência|lock|máquina de estados|código de falha|transitório|permanente|referência pendente|reversão|inbox|SQS|outbox|autenticação|autorização|Fx|encerramento|limitação|trabalho pendente' ARCHITECTURE.md | head -20`
 
 **C187** - .env.example uses commented KEY=value with local example values and no real secret (AC 187) [done]
