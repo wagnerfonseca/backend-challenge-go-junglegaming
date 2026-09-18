@@ -1,0 +1,33 @@
+{
+  "Policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "ProvidersMaySendOnly",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": [
+            "arn:aws:iam::000000000000:user/wager-provider-a",
+            "arn:aws:iam::000000000000:user/wager-provider-b"
+          ]
+        },
+        "Action": "sqs:SendMessage",
+        "Resource": "arn:aws:sqs:us-east-1:000000000000:wager-transactions.fifo"
+      },
+      {
+        "Sid": "ConsumerMayReceiveDeleteAndRenew",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::000000000000:user/wager-consumer"
+        },
+        "Action": [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:ChangeMessageVisibility",
+          "sqs:GetQueueAttributes"
+        ],
+        "Resource": "arn:aws:sqs:us-east-1:000000000000:wager-transactions.fifo"
+      }
+    ]
+  }
+}

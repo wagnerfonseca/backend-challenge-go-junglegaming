@@ -1,0 +1,19 @@
+{
+  "Policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "OutboxPublisherMaySendAndInspect",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::000000000000:user/wager-outbox-publisher"
+        },
+        "Action": [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ],
+        "Resource": "arn:aws:sqs:us-east-1:000000000000:wager-events.fifo"
+      }
+    ]
+  }
+}
