@@ -473,10 +473,10 @@ Proof: `go test ./... -run TestOutboxRecovery -tags integration`
 **C148** - Process stopping after SQS accepts event before outbox confirmation republishes with same eventId (AC 148)
 Proof: `go test ./... -run TestOutboxStableIdRepublish -tags integration`
 
-**C149** - Event envelope contains eventId, eventType, aggregateId, correlationId, optional causationId, occurredAt, version, typed data (AC 149)
+**C149** - Event envelope contains eventId, eventType, aggregateId, correlationId, optional causationId, occurredAt, version, typed data (AC 149) [done]
 Proof: `go test ./domain/... -run TestEventEnvelopeStructure`
 
-**C150** - Event serialization uses version 1, UTC RFC 3339 milliseconds, decimal-string money (AC 150)
+**C150** - Event serialization uses version 1, UTC RFC 3339 milliseconds, decimal-string money (AC 150) [done]
 Proof: `go test ./domain/... -run TestEventSerialization`
 
 **C151** - External operation or positive-balance OPENING reaching PROCESSED persists exactly one WagerTransactionProcessed (AC 151)
@@ -491,10 +491,10 @@ Proof: `go test ./... -run TestBalanceChangeEvent -tags integration`
 **C154** - Transaction first entering PENDING_REFERENCE persists exactly one WagerTransactionPendingReference (AC 154)
 Proof: `go test ./... -run TestPendingReferenceEventCount -tags integration`
 
-**C155** - WalletBalanceChanged.data contains walletId, transactionId, direction, money, balanceBefore, balanceAfter, walletVersion (AC 155)
+**C155** - WalletBalanceChanged.data contains walletId, transactionId, direction, money, balanceBefore, balanceAfter, walletVersion (AC 155) [done]
 Proof: `go test ./domain/... -run TestBalanceChangedPayload`
 
-**C156** - Event data schemas match Processed, Rejected, PendingReference field sets (AC 156)
+**C156** - Event data schemas match Processed, Rejected, PendingReference field sets (AC 156) [done]
 Proof: `go test ./domain/... -run TestEventDataSchemas`
 
 **C157** - Event sent to wager-events.fifo uses MessageGroupId=walletId and MessageDeduplicationId=eventId (AC 157)
@@ -686,7 +686,7 @@ Proof: `go test ./... -run TestReconciliationMetric -tags integration`
 **C215** - Reconciliation nonzero difference writes JSON log with walletId, storedBalance, calculatedBalance, difference (AC 215)
 Proof: `go test ./... -run TestReconciliationLog -tags integration`
 
-**C216** - Event constructor sets own eventType and version:1 without caller overrides (AC 216)
+**C216** - Event constructor sets own eventType and version:1 without caller overrides (AC 216) [done]
 Proof: `go test ./domain/... -run TestEventConstructorVersion`
 
 **C217** - Production configuration enabling integration failpoint rejects startup with non-zero exit (AC 217)
