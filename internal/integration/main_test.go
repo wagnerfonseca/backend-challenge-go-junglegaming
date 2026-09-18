@@ -163,6 +163,13 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWithOptions(t)
+}
+
+// newHarnessWithOptions builds the harness with extra application options,
+// such as a transaction-boundary failpoint.
+func newHarnessWithOptions(t *testing.T, options ...application.Option) *harness {
+	t.Helper()
 	ctx := context.Background()
 	config, err := pgxpool.ParseConfig(testDSN)
 	if err != nil {
@@ -177,9 +184,10 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(pool.Close)
 	clock := &testClock{now: time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)}
 	store := deadapter.NewStore(pool)
+	serviceOptions := append([]application.Option{application.WithReconciler(store)}, options...)
 	return &harness{
 		t:          t,
-		service:    application.NewWagerService(store, clock, application.WithReconciler(store)),
+		service:    application.NewWagerService(store, clock, serviceOptions...),
 		store:      store,
 		appPool:    pool,
 		clock:      clock,

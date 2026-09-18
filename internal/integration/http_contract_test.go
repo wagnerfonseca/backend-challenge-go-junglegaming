@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"
+
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/app"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/config"
 	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/adapters/health"
@@ -237,7 +239,7 @@ func TestFailureMetricAndAudit(t *testing.T) {
 	bet.ExternalTransactionID = referenceExternal
 	h.mustSubmit(bet)
 	if _, err := adminPool.Exec(h.ctx(),
-		`UPDATE wager_transactions SET "idempotencyKey" = '' WHERE "providerId" = $1 AND "externalTransactionId" = $2`,
+		`UPDATE wager_transactions SET "digestVersion" = '' WHERE "providerId" = $1 AND "externalTransactionId" = $2`,
 		bet.ProviderID.String(), referenceExternal.String()); err != nil {
 		t.Fatalf("corrupting the reference row: %v", err)
 	}
@@ -520,4 +522,21 @@ func provisionQueues(t *testing.T) sqs.Queues {
 		t.Fatalf("provisioning queues: %v", err)
 	}
 	return queues
+}
+
+// provisionIsolatedQueues creates a uniquely named queue set so redrive tests
+// never share dead-letter state with each other.
+func provisionIsolatedQueues(t *testing.T) (sqs.Queues, *awssqs.Client) {
+	t.Helper()
+	client := sqsClient(t)
+	suffix := strings.ToLower(strings.ReplaceAll(newCorrelation(), "-", ""))[:12]
+	queues, err := sqs.ProvisionNamed(context.Background(), client,
+		"wager-transactions-"+suffix+".fifo",
+		"wager-transactions-dlq-"+suffix+".fifo",
+		"wager-events-"+suffix+".fifo",
+	)
+	if err != nil {
+		t.Fatalf("provisioning isolated queues: %v", err)
+	}
+	return queues, client
 }
