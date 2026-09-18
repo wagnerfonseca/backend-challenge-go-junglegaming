@@ -26,9 +26,10 @@ func (SystemClock) Now() time.Time { return time.Now().UTC() }
 // WagerService implements the wallet and wager use cases shared by every
 // ingress. Construct it with manual injection.
 type WagerService struct {
-	store      Store
-	clock      Clock
-	reconciler Reconciler
+	store       Store
+	clock       Clock
+	reconciler  Reconciler
+	txFailpoint TxFailpoint
 }
 
 // NewWagerService wires the use cases to their ports.
@@ -184,7 +185,10 @@ func (s *WagerService) SubmitWagerTransaction(ctx context.Context, cmd SubmitWag
 		err := s.store.InTx(ctx, func(ctx context.Context, repos Repositories) error {
 			var err error
 			result, err = s.submitWithinTx(ctx, repos, cmd, digest, correlation)
-			return err
+			if err != nil {
+				return err
+			}
+			return s.hitFailpoint("before_commit")
 		})
 		if err == nil {
 			return result, nil
@@ -209,11 +213,20 @@ func (s *WagerService) submitWithinTx(ctx context.Context, repos Repositories, c
 		}
 		return WagerResult{}, conflictError(CodeIdempotencyConflict, "idempotency key already used with a different business projection", nil)
 	}
-	_, found, err = repos.Transactions.ByProviderAndExternalID(ctx, cmd.ProviderID, cmd.ExternalTransactionID)
+	conflicting, found, err := repos.Transactions.ByProviderAndExternalID(ctx, cmd.ProviderID, cmd.ExternalTransactionID)
 	if err != nil {
 		return WagerResult{}, err
 	}
 	if found {
+		// A concurrent equivalent command can commit between the two lookups.
+		// The stored key decides whether this is our own result or a genuine
+		// external-identity conflict.
+		if conflicting.IdempotencyKey() == cmd.IdempotencyKey {
+			if conflicting.Digest() == digest && conflicting.DigestVersion() == DigestVersion {
+				return resultOf(conflicting, true), nil
+			}
+			return WagerResult{}, conflictError(CodeIdempotencyConflict, "idempotency key already used with a different business projection", nil)
+		}
 		return WagerResult{}, conflictError(CodeExternalTransactionConflict, "external transaction already used under another idempotency key", nil)
 	}
 	wall, found, err := repos.Wallets.LockByID(ctx, cmd.WalletID)
