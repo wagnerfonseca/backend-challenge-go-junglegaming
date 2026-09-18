@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/financial"
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // C22 - Entity creation rejects an empty identity, invalid initial state, zero

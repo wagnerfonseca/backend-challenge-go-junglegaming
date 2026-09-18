@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // Origin distinguishes internal operations from provider operations.

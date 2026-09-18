@@ -15,16 +15,16 @@ Plan: `.specs/features/distributed-wager-processing/plan.md`
 Proof: `grep '^go ' go.mod && grep 'golang:1.27' Dockerfile`
 
 **C2** - The domain compiles without imports of Fx, HTTP, SQS, PostgreSQL, OIDC, Prometheus, or logging adapters (AC 2)
-Proof: `go build ./domain/...`
+Proof: `go build ./internal/domain/...`
 
 **C3** - The application graph composes configuration, connections, repositories, use cases, handlers, and workers through `fx.Module`, `fx.Provide`, and `fx.Invoke` (AC 3)
-Proof: `grep -r 'fx.Module\|fx.Provide\|fx.Invoke' cmd/ adapters/`
+Proof: `grep -r 'fx.Module\|fx.Provide\|fx.Invoke' cmd/ internal/adapters/`
 
 **C4** - Invalid or unavailable configuration, PostgreSQL, SQS, or OIDC at startup causes non-zero exit before readiness (AC 4)
 Proof: `go test ./... -run TestStartupFailure -tags integration`
 
 **C5** - One `context.Context` propagates through application and I/O boundaries during requests and worker operations (AC 5)
-Proof: `grep -r 'context.Context' application/ adapters/ | head -30`
+Proof: `grep -r 'context.Context' internal/application/ internal/adapters/ | head -30`
 
 **C6** - `SIGTERM` stops accepting HTTP and stops polling SQS before starting resource shutdown (AC 6)
 Proof: `go test ./... -run TestSIGTERMOrdering -tags integration`
@@ -42,15 +42,15 @@ Proof: `docker compose up --build && curl http://localhost:8080/health/ready`
 Proof: `go run ./cmd/migrate --validate`
 
 **C11** - PostgreSQL adapter uses `pgx/v5` and explicit parameterized SQL for every query, transaction, lock, and constraint-dependent operation (AC 11)
-Proof: `grep 'github.com/jackc/pgx/v5' adapters/postgres/*.go && ! grep -r 'QueryRowx\|Select\\|Get' adapters/postgres/*.go`
+Proof: `grep 'github.com/jackc/pgx/v5' internal/adapters/postgres/*.go && ! grep -r 'QueryRowx\|Select\\|Get' internal/adapters/postgres/*.go`
 
 **C12** - No mutable package-global dependency or service locator exists (AC 12)
-Proof: `grep -rE 'var\s+\w+\s+(Client|DB|Pool|Client)\b' pkg/ domain/ || echo no-globals`
+Proof: `grep -rE 'var\s+\w+\s+(Client|DB|Pool|Client)\b' internal/ || echo no-globals`
 
 ### S2 - Dinheiro e entidades preservam invariantes sem infraestrutura (AC 13-27)
 
 **C13** - Money never passes through `float32` or `float64` in any code path (AC 13) [done]
-Proof: `grep -rE 'float32|float64' domain/money/ || echo no-floats`
+Proof: `grep -rE 'float32|float64' internal/domain/money/ || echo no-floats`
 
 **C14** - Parsing `25.00` BRL produces exactly `2500` minor units and serializes back to `{"amount":"25.00","currency":"BRL"}` (AC 14) [done]
 Proof: `go test ./domain/... -run TestMoneyParseAndSerialize`
@@ -286,7 +286,7 @@ Proof: `go test ./... -run TestLateReferenceIgnored -tags integration`
 ### S6 - Banco serializa por carteira e mantém atomicidade entre processos (AC 89-101)
 
 **C89** - Operation changing wallet locks that wallet row with SELECT FOR UPDATE before reading balance (AC 89)
-Proof: `grep -r 'SELECT.*FOR UPDATE' adapters/postgres/*.go`
+Proof: `grep -r 'SELECT.*FOR UPDATE' internal/adapters/postgres/*.go`
 
 **C90** - One wallet locked allows independent wallet operation to reach commit (AC 90)
 Proof: `go test ./... -run TestCrossWalletConcurrency -tags integration`
@@ -322,7 +322,7 @@ Proof: `go test ./... -run TestSQSRedeliveryAfterCommit -tags integration`
 Proof: `go test ./... -run TestInfrastructureUnavailableRecovery -tags integration`
 
 **C101** - System uses no process-global or database-global lock for wallet coordination (AC 101)
-Proof: `grep -rE 'sync\.(Mutex|RWMutex|Once|Map|Pool)|sync\.Once|global' adapters/ domain/ | grep -v sync.Map && echo no-global-locks`
+Proof: `grep -rE 'sync\.(Mutex|RWMutex|Once|Map|Pool)|sync\.Once|global' internal/adapters/ internal/domain/ | grep -v sync.Map && echo no-global-locks`
 
 ### S7 - OIDC e políticas impedem acesso entre provedores (AC 102-111)
 
@@ -380,7 +380,7 @@ Proof: `go test ./... -run TestProviderTransactionGet -tags integration`
 Proof: `go test ./... -run TestTransactionStatusExposure -tags integration`
 
 **C119** - Reconciliation reads wallet and ledger in one REPEATABLE READ snapshot (AC 119)
-Proof: `grep -r 'REPEATABLE READ\|REPEATABLE' adapters/postgres/*.go`
+Proof: `grep -r 'REPEATABLE READ\|REPEATABLE' internal/adapters/postgres/*.go`
 
 **C120** - Reconciliation difference equals stored balance minus credits plus debits in wallet currency (AC 120)
 Proof: `go test ./... -run TestReconciliationCalculation -tags integration`
@@ -401,7 +401,7 @@ Proof: `go test ./... -run TestErrorEnvelope -tags integration`
 Proof: `go test ./... -run TestHttpResponseCodes -tags integration`
 
 **C126** - Supplied unprefixed routes remain implicit v1; incompatible changes use new route or media type (AC 126)
-Proof: `grep '^GET\|^POST\|^PUT\|^DELETE' adapters/http/*.go | head -20`
+Proof: `grep '^GET\|^POST\|^PUT\|^DELETE' internal/adapters/http/*.go | head -20`
 
 ### S9 - SQS inbox durável e confirmação de trabalho (AC 127-142)
 
@@ -442,7 +442,7 @@ Proof: `go test ./... -run TestDLQAfterFiveReceives -tags integration`
 Proof: `go test ./... -run TestSQSPollingParameters -tags integration`
 
 **C139** - Ingress message uses MessageGroupId=walletId and MessageDeduplicationId=messageId (AC 139)
-Proof: `grep -r 'MessageGroupId\|MessageDeduplicationId' adapters/sqs/*.go`
+Proof: `grep -r 'MessageGroupId\|MessageDeduplicationId' internal/adapters/sqs/*.go`
 
 **C140** - Missing reference stored as PENDING_REFERENCE completes inbox and transfers continuation to reference worker (AC 140)
 Proof: `go test ./... -run TestInboxToReferenceWorker -tags integration`
@@ -459,7 +459,7 @@ Proof: `go test ./... -run TestHTTPSQSRace -tags integration`
 Proof: `go test ./... -run TestOutboxAtCommit -tags integration`
 
 **C144** - Request path and SQS consumer do NOT publish integration event directly (AC 144)
-Proof: `grep -r 'SendMessage\|Publish' application/ | grep -v outbox || echo no-direct-publish`
+Proof: `grep -r 'SendMessage\|Publish' internal/application/ | grep -v outbox || echo no-direct-publish`
 
 **C145** - Due outbox row claimed in batch at most 50 with 30s recoverable lease (AC 145)
 Proof: `go test ./... -run TestOutboxLeaseAndBatch -tags integration`
@@ -498,7 +498,7 @@ Proof: `go test ./domain/... -run TestBalanceChangedPayload`
 Proof: `go test ./domain/... -run TestEventDataSchemas`
 
 **C157** - Event sent to wager-events.fifo uses MessageGroupId=walletId and MessageDeduplicationId=eventId (AC 157)
-Proof: `grep -r 'MessageGroupId\|MessageDeduplicationId' adapters/sqs/*.go`
+Proof: `grep -r 'MessageGroupId\|MessageDeduplicationId' internal/adapters/sqs/*.go`
 
 **C158** - Publication metadata changes preserve event identity, type, version, aggregate, occurrence time, payload bytes (AC 158)
 Proof: `go test ./... -run TestOutboxMetadataStability -tags integration`
@@ -515,10 +515,10 @@ Proof: `go test ./... -run TestHealthReady -tags integration`
 Proof: `curl -H 'Authorization: Bearer $METRICS_TOKEN' http://localhost:8080/metrics | head -1`
 
 **C162** - Metrics endpoint exposes all 8 named metrics with correct labels (AC 162)
-Proof: `grep -E 'wager_transactions_total|wager_idempotency_duplicates_total|wager_retries_total|wager_dlq_total|wallet_concurrency_conflicts_total|outbox_oldest_pending_seconds|wager_processing_duration_seconds|wallet_reconciliation_divergences_total' adapters/metrics/*.go`
+Proof: `grep -E 'wager_transactions_total|wager_idempotency_duplicates_total|wager_retries_total|wager_dlq_total|wallet_concurrency_conflicts_total|outbox_oldest_pending_seconds|wager_processing_duration_seconds|wallet_reconciliation_divergences_total' internal/adapters/metrics/*.go`
 
 **C163** - Log record is JSON with timestamp, level, message, service, instance, and identifiers (AC 163)
-Proof: `grep -r 'slog\.JSON\|slog\.NewJSONHandler' adapters/`
+Proof: `grep -r 'slog\.JSON\|slog\.NewJSONHandler' internal/adapters/`
 
 **C164** - Logs contain no credential, token, full body, financial payload, or unbounded error detail (AC 164)
 Proof: `go test ./... -run TestLogSanitization -tags integration`
@@ -530,7 +530,7 @@ Proof: `go test ./... -run TestCorrelationPropagation -tags integration`
 Proof: `go test ./... -run TestFailureMetricAndAudit -tags integration`
 
 **C167** - Financial records, ledger, reversal claims, inbox, outbox have no automatic deletion (AC 167)
-Proof: `grep -rE 'DELETE.*FROM.*(transactions|ledger|reversal|inbox|outbox)|DROP.*TABLE' adapters/ migrations/ || echo no-auto-delete`
+Proof: `grep -rE 'DELETE.*FROM.*(transactions|ledger|reversal|inbox|outbox)|DROP.*TABLE' internal/adapters/ migrations/ || echo no-auto-delete`
 
 ### S12 - Entrega prova garantias com infraestrutura real (AC 168-189)
 
@@ -538,7 +538,7 @@ Proof: `grep -rE 'DELETE.*FROM.*(transactions|ledger|reversal|inbox|outbox)|DROP
 Proof: `go test ./...`
 
 **C169** - Integration tests use real PostgreSQL, Keycloak, LocalStack containers, not mocks (AC 169)
-Proof: `grep -r 'testcontainers\|ContainerRequest\|compose' integration/ | head -5`
+Proof: `grep -r 'testcontainers\|ContainerRequest\|compose' internal/integration/ | head -5`
 
 **C170** - Integration suite applies and reverses every migration and exercises constraints and ledger write denial (AC 170)
 Proof: `go test ./... -run TestMigrationReversal -tags integration`
@@ -620,19 +620,19 @@ Proof: `go test ./domain/... -run TestMoneyComparison`
 ### S14 - Escopos e broker vinculam entrada à identidade autorizada (AC 195-204)
 
 **C195** - HTTP scope map requires wallets:write for POST /wallets, wallets:read for reads, reconciliation:execute, metrics:read, wagering:write for wager submission, wagering:read for transaction reads (AC 195)
-Proof: `grep -r 'scopes\|scope' adapters/http/middleware/*.go | head -10`
+Proof: `grep -r 'scopes\|scope' internal/adapters/http/middleware/*.go | head -10`
 
 **C196** - Valid token lacking exact route scope returns 403 before invoking use case (AC 196)
 Proof: `go test ./... -run TestScopeEnforcement -tags integration`
 
 **C197** - Input queue policy allows provider principals only SendMessage and consumer only ReceiveMessage, DeleteMessage, ChangeMessageVisibility, GetQueueAttributes (AC 197)
-Proof: `grep -A10 'Policy' adapters/sqs/queue-policy.json`
+Proof: `grep -A10 'Policy' internal/adapters/sqs/queue-policy.json`
 
 **C198** - SQS consumer receives message requests SenderId and ApproximateReceiveCount system attributes (AC 198)
-Proof: `grep -r 'SenderId\|ApproximateReceiveCount' adapters/sqs/consumer/*.go`
+Proof: `grep -r 'SenderId\|ApproximateReceiveCount' internal/adapters/sqs/consumer/*.go`
 
 **C199** - Output queue policy allows only outbox publisher principal to call SendMessage and GetQueueAttributes (AC 199)
-Proof: `grep -A10 'Policy' adapters/sqs/publisher-policy.json`
+Proof: `grep -A10 'Policy' internal/adapters/sqs/publisher-policy.json`
 
 **C200** - WagerTransactionRequested.data.idempotencyKey absent/empty/>255 bytes classifies as permanent INVALID_MESSAGE (AC 200)
 Proof: `go test ./... -run TestInvalidMessagePermanent -tags integration`
@@ -699,7 +699,7 @@ Proof: `go test ./... -run TestInvalidIdentityRejection -tags integration`
 Proof: `ls go.sum && grep '// indirect' go.mod | wc -l`
 
 **C220** - Metric names, types, label names match criterion 162 v1 Prometheus contract (AC 220)
-Proof: `grep -E 'wager_transactions_total\{.*kind.*status.*ingress\}' adapters/metrics/*.go`
+Proof: `grep -E 'wager_transactions_total\{.*kind.*status.*ingress\}' internal/adapters/metrics/*.go`
 
 **C221** - Reference external ID existing only under another provider treated as absent, reveals no referenced field (AC 221)
 Proof: `go test ./... -run TestCrossProviderReferenceHidden -tags integration`
@@ -711,7 +711,7 @@ Proof: `go test ./... -run TestInternalOpeningSchema -tags integration`
 Proof: `go test ./... -run TestPayloadTooLarge -tags integration`
 
 **C224** - HTTP server uses read-header 5s, read 10s, write 35s, idle 60s, reconciliation deadline 30s (AC 224)
-Proof: `grep -r 'ReadHeaderTimeout\|ReadTimeout\|WriteTimeout\|IdleTimeout\|Timeout' adapters/http/server/*.go`
+Proof: `grep -r 'ReadHeaderTimeout\|ReadTimeout\|WriteTimeout\|IdleTimeout\|Timeout' internal/adapters/http/server/*.go`
 
 **C225** - Multiple reference workers poll due work: one 30s lease per item in claimed batch of at most 50 (AC 225)
 Proof: `go test ./... -run TestReferenceWorkerLease -tags integration`
@@ -771,13 +771,13 @@ The repo's guidelines say where tests live and how to run them, and nothing abou
 
 Evidence:
 
-- `domain/money/`: pure arithmetic and validation, no branch points beyond range/currency checks -> decides at own layer
-- `domain/wallet/`: balance operations and version control -> decides at own layer
-- `domain/wager/`: state machine, reference resolution, reversal lineage -> decides, reached across a boundary (HTTP/SQS/queue)
-- `adapters/http/`: dispatches over routes and statuses -> entry point, one proof per status group at boundary
-- `adapters/sqs/`: receives, validates, delegates -> entry point, one proof per delivery outcome at boundary
-- `adapters/postgres/`: SQL operations only -> instrumentation, proven by consumers
-- `adapters/metrics/`: exposes metrics -> instrumentation, proven by health/integration tests
+- `internal/domain/money/`: pure arithmetic and validation, no branch points beyond range/currency checks -> decides at own layer
+- `internal/domain/wallet/`: balance operations and version control -> decides at own layer
+- `internal/domain/wager/`: state machine, reference resolution, reversal lineage -> decides, reached across a boundary (HTTP/SQS/queue)
+- `internal/adapters/http/`: dispatches over routes and statuses -> entry point, one proof per status group at boundary
+- `internal/adapters/sqs/`: receives, validates, delegates -> entry point, one proof per delivery outcome at boundary
+- `internal/adapters/postgres/`: SQL operations only -> instrumentation, proven by consumers
+- `internal/adapters/metrics/`: exposes metrics -> instrumentation, proven by health/integration tests
 
 ## Swept
 

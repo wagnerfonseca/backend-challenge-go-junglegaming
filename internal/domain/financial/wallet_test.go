@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/financial"
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // C21 - The Wallet never exposes a balance below 0.00.

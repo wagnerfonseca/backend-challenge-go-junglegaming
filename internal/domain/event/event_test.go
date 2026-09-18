@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/event"
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/event"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 var testNow = time.Date(2026, 9, 18, 12, 0, 0, 123000000, time.UTC)

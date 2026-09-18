@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/financial"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
 )
 
 // C57 - The state machine allows only PENDING -> PENDING_REFERENCE |

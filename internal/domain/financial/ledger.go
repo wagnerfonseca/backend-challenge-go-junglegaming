@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // Direction is the sign of a ledger movement.

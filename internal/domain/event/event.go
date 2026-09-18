@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // Type is the event type discriminator.

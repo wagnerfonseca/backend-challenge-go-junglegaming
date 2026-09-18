@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/financial"
-	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/domain/money"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/financial"
+	"github.com/wagnerfonseca/backend-challenge-go-junglegaming/internal/domain/money"
 )
 
 // C41 - A WalletLedgerEntry requires balanceAfter = balanceBefore + money for
