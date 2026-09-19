@@ -52,6 +52,30 @@ func (s *recordingSender) setFail(fail bool) {
 	s.fail = fail
 }
 
+// claimSpy captures the batch and lease the publisher claims with.
+type claimSpy struct {
+	limit int
+	lease time.Duration
+}
+
+func (s *claimSpy) ClaimDueEvents(_ context.Context, _ time.Time, limit int, lease time.Duration) ([]application.OutboxRecord, error) {
+	s.limit = limit
+	s.lease = lease
+	return nil, nil
+}
+
+func (s *claimSpy) ConfirmEvent(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+func (s *claimSpy) RescheduleEvent(_ context.Context, _ string, _, _ time.Time, _ int) error {
+	return nil
+}
+
+func (s *claimSpy) OldestPendingAge(_ context.Context, _ time.Time) (time.Duration, bool, error) {
+	return 0, false, nil
+}
+
 // clearOutbox makes earlier tests unable to affect a publisher scenario.
 func clearOutbox(t *testing.T) {
 	t.Helper()
@@ -95,6 +119,19 @@ func TestOutboxAtCommit(t *testing.T) {
 // C145 - A due outbox row is claimed in a batch of at most 50 under a
 // 30-second recoverable lease.
 func TestOutboxLeaseAndBatch(t *testing.T) {
+	if outbox.Batch != 50 {
+		t.Fatalf("outbox.Batch = %d, want 50", outbox.Batch)
+	}
+	if outbox.Lease != 30*time.Second {
+		t.Fatalf("outbox.Lease = %s, want 30s", outbox.Lease)
+	}
+	spy := &claimSpy{}
+	if _, err := outbox.New(spy, &recordingSender{}).PublishOnce(context.Background()); err != nil {
+		t.Fatalf("publisher pass: %v", err)
+	}
+	if spy.limit != 50 || spy.lease != 30*time.Second {
+		t.Fatalf("publisher claim = batch %d lease %s, want batch 50 lease 30s", spy.limit, spy.lease)
+	}
 	h := newHarness(t)
 	view := h.openWallet("1000.00")
 	clearOutbox(t)
@@ -102,11 +139,11 @@ func TestOutboxLeaseAndBatch(t *testing.T) {
 		h.mustSubmit(h.command(view, financial.KindLoss, "0.00"))
 	}
 	now := time.Now().UTC()
-	first, err := h.store.ClaimDueEvents(h.ctx(), now, 50, 30*time.Second)
+	first, err := h.store.ClaimDueEvents(h.ctx(), now, outbox.Batch, outbox.Lease)
 	if err != nil {
 		t.Fatalf("first claim: %v", err)
 	}
-	second, err := h.store.ClaimDueEvents(h.ctx(), now, 50, 30*time.Second)
+	second, err := h.store.ClaimDueEvents(h.ctx(), now, outbox.Batch, outbox.Lease)
 	if err != nil {
 		t.Fatalf("second claim: %v", err)
 	}
@@ -132,7 +169,7 @@ func TestOutboxLeaseAndBatch(t *testing.T) {
 	if leased != 55 {
 		t.Errorf("leased events = %d, want 55", leased)
 	}
-	recovered, err := h.store.ClaimDueEvents(h.ctx(), now.Add(31*time.Second), 50, 30*time.Second)
+	recovered, err := h.store.ClaimDueEvents(h.ctx(), now.Add(outbox.Lease+time.Second), outbox.Batch, outbox.Lease)
 	if err != nil {
 		t.Fatalf("recovery claim: %v", err)
 	}
