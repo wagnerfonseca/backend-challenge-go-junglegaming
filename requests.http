@@ -1,0 +1,181 @@
+### Variables
+@apiUrl = http://localhost:8080
+@keycloakUrl = http://localhost:8180/realms/wager
+@providerId = provider-a
+@playerId = 2f2c4a2e-8f84-4c52-9e4d-5d5f9a4c9f01
+@walletId = {{createWalletRequest.response.body.$.id}}
+@transactionWalletLedgerId = {{getWalletLedgerRequest.response.body.$.items[0].transactionId}}
+@transactionId = {{submitWagerRequest.response.body.$.transactionId}}
+@externalTransactionId = ext-transaction-001
+
+### Get a provider token
+# @name providerTokenRequest
+POST {{keycloakUrl}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=provider-a&client_secret=local-provider-a&grant_type=client_credentials
+
+### Get a provider-b token
+# @name providerBTokenRequest
+POST {{keycloakUrl}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=provider-b&client_secret=local-provider-b&grant_type=client_credentials
+
+### Get an internal service token
+# @name internalTokenRequest
+POST {{keycloakUrl}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=internal-service&client_secret=local-internal-service&grant_type=client_credentials
+
+### Get an expiring provider token
+# Use this token immediately, or wait for it to expire to test a 401 response.
+# @name expiredTokenRequest
+POST {{keycloakUrl}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=provider-expiring&client_secret=local-provider-expiring&grant_type=client_credentials
+
+### Health: liveness
+GET {{apiUrl}}/health/live
+
+### Health: readiness
+GET {{apiUrl}}/health/ready
+
+### Create wallet
+# Requires the internal token and wallets:write.
+# Save the returned id as @walletId.
+# @name createWalletRequest
+POST {{apiUrl}}/wallets
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+Content-Type: application/json
+X-Correlation-ID: wallet-create-001
+
+{
+  "playerId": "{{playerId}}",
+  "initialBalance": {
+    "amount": "1000.00",
+    "currency": "BRL"
+  }
+}
+
+### Get wallet
+GET {{apiUrl}}/wallets/{{walletId}}
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+
+### Get wallet ledger
+# @name getWalletLedgerRequest
+GET {{apiUrl}}/wallets/{{walletId}}/ledger?limit=50
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+
+### Submit wager
+# Requires the provider token and wagering:write.
+# The provider identity comes from the token (provider-a).
+# Save the returned transactionId as @transactionId.
+# @name submitWagerRequest
+POST {{apiUrl}}/wagering/transactions
+Authorization: Bearer {{providerTokenRequest.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: aposta-001
+X-Correlation-ID: wager-001
+
+{
+  "externalTransactionId": "{{externalTransactionId}}",
+  "providerId": "{{providerId}}",
+  "playerId": "{{playerId}}",
+  "walletId": "{{walletId}}",
+  "roundId": "round-001",
+  "gameId": "game-001",
+  "kind": "BET",
+  "money": {
+    "amount": "25.00",
+    "currency": "BRL"
+  }
+}
+
+### Replay the same wager (idempotency check)
+POST {{apiUrl}}/wagering/transactions
+Authorization: Bearer {{providerTokenRequest.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: aposta-001
+
+{
+  "externalTransactionId": "{{externalTransactionId}}",
+  "providerId": "{{providerId}}",
+  "playerId": "{{playerId}}",
+  "walletId": "{{walletId}}",
+  "roundId": "round-001",
+  "gameId": "game-001",
+  "kind": "BET",
+  "money": {
+    "amount": "25.00",
+    "currency": "BRL"
+  }
+}
+
+### Get transaction by transaction ID
+GET {{apiUrl}}/wagering/transactions/{{transactionId}}
+Authorization: Bearer {{providerTokenRequest.response.body.$.access_token}}
+
+### Get transaction by provider and external ID
+GET {{apiUrl}}/providers/{{providerId}}/wagering/transactions/{{externalTransactionId}}
+Authorization: Bearer {{providerTokenRequest.response.body.$.access_token}}
+
+### Reconcile wallet
+POST {{apiUrl}}/wallets/{{walletId}}/reconciliation
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+X-Correlation-ID: reconciliation-001
+
+### Get metrics
+GET {{apiUrl}}/metrics
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+Accept: text/plain
+
+### Expired token should return 401
+POST {{apiUrl}}/wagering/transactions
+Authorization: Bearer {{expiredTokenRequest.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: aposta-expirada-001
+
+{
+  "externalTransactionId": "ext-2",
+  "playerId": "{{playerId}}",
+  "walletId": "{{walletId}}",
+  "roundId": "r2",
+  "gameId": "g2",
+  "kind": "BET",
+  "money": {
+    "amount": "10.00",
+    "currency": "BRL"
+  }
+}
+
+### Invalid wallet ID should return 400
+GET {{apiUrl}}/wallets/invalid-id
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+
+### Invalid content type should return 415
+POST {{apiUrl}}/wallets
+Authorization: Bearer {{internalTokenRequest.response.body.$.access_token}}
+Content-Type: text/plain
+
+{"playerId":"x","initialBalance":{"amount":"10.00","currency":"BRL"}}
+
+### Missing idempotency key should return 400
+POST {{apiUrl}}/wagering/transactions
+Authorization: Bearer {{providerTokenRequest.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "externalTransactionId": "ext-x",
+  "playerId": "{{playerId}}",
+  "walletId": "{{walletId}}",
+  "roundId": "r",
+  "gameId": "g",
+  "kind": "BET",
+  "money": {
+    "amount": "10.00",
+    "currency": "BRL"
+  }
+}
