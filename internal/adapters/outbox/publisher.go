@@ -4,6 +4,7 @@ package outbox
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -132,12 +133,18 @@ func (p *Publisher) PublishOnce(ctx context.Context) (int, error) {
 			p.metrics.WagerRetriesTotal.Inc("outbox", "publish")
 			nextAttemptAt := now.Add(Backoff(record.Attempts))
 			if rescheduleErr := p.store.RescheduleEvent(ctx, record.EventID, now, nextAttemptAt, record.Attempts); rescheduleErr != nil {
-				p.logger.WarnContext(ctx, "outbox reschedule failed", "eventId", record.EventID, "error", rescheduleErr.Error())
+				if errors.Is(rescheduleErr, application.ErrOutboxLeaseLost) {
+					continue
+				}
+				return published, rescheduleErr
 			}
 			continue
 		}
 		p.failpoints.Hit(failpoint.OutboxAfterPublish)
-		if err := p.store.ConfirmEvent(ctx, record.EventID, now); err != nil {
+		if err := p.store.ConfirmEvent(ctx, record.EventID, now, record.Attempts); err != nil {
+			if errors.Is(err, application.ErrOutboxLeaseLost) {
+				continue
+			}
 			return published, err
 		}
 		published++

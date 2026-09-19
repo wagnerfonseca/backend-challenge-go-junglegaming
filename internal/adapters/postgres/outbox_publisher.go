@@ -48,22 +48,37 @@ func (s *Store) ClaimDueEvents(ctx context.Context, now time.Time, limit int, le
 
 // ConfirmEvent confirms one accepted publication. The event snapshot is never
 // updated.
-func (s *Store) ConfirmEvent(ctx context.Context, eventID string, confirmedAt time.Time) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE outbox_events SET "publishedAt" = $2, "claimedUntil" = NULL WHERE "eventId" = $1`,
-		eventID, confirmedAt.UTC(),
+func (s *Store) ConfirmEvent(ctx context.Context, eventID string, confirmedAt time.Time, attempts int) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE outbox_events SET "publishedAt" = $2, "claimedUntil" = NULL
+		WHERE "eventId" = $1 AND "publishedAt" IS NULL
+			AND "claimedUntil" IS NOT NULL AND "attempts" = $3`,
+		eventID, confirmedAt.UTC(), int64(attempts),
 	)
-	return mapError(err)
+	if err != nil {
+		return mapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return application.ErrOutboxLeaseLost
+	}
+	return nil
 }
 
 // RescheduleEvent releases one lease and records the next attempt.
 func (s *Store) RescheduleEvent(ctx context.Context, eventID string, now, nextAttemptAt time.Time, attempts int) error {
-	_, err := s.pool.Exec(ctx,
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE outbox_events SET "nextAttemptAt" = $2, "attempts" = $3, "claimedUntil" = NULL
-		WHERE "eventId" = $1 AND "publishedAt" IS NULL`,
+		WHERE "eventId" = $1 AND "publishedAt" IS NULL
+			AND "claimedUntil" IS NOT NULL AND "attempts" = $3`,
 		eventID, nextAttemptAt.UTC(), int64(attempts),
 	)
-	return mapError(err)
+	if err != nil {
+		return mapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return application.ErrOutboxLeaseLost
+	}
+	return nil
 }
 
 // OldestPendingAge reports the age of the oldest unpublished event.

@@ -56,6 +56,8 @@ var (
 	// ErrCorruptPersistedRecord means a persisted row cannot be rebuilt into a
 	// valid domain entity.
 	ErrCorruptPersistedRecord = errors.New("application: persisted record violates an invariant")
+	// ErrOutboxLeaseLost means a publisher no longer owns the claimed event.
+	ErrOutboxLeaseLost = errors.New("application: outbox lease lost")
 )
 
 // errInvariant marks a broken internal invariant that should be impossible

@@ -64,7 +64,7 @@ func (s *claimSpy) ClaimDueEvents(_ context.Context, _ time.Time, limit int, lea
 	return nil, nil
 }
 
-func (s *claimSpy) ConfirmEvent(_ context.Context, _ string, _ time.Time) error {
+func (s *claimSpy) ConfirmEvent(_ context.Context, _ string, _ time.Time, _ int) error {
 	return nil
 }
 
@@ -80,7 +80,7 @@ func (s *claimSpy) OldestPendingAge(_ context.Context, _ time.Time) (time.Durati
 func clearOutbox(t *testing.T) {
 	t.Helper()
 	if _, err := adminPool.Exec(context.Background(),
-		`UPDATE outbox_events SET "publishedAt" = now() WHERE "publishedAt" IS NULL`); err != nil {
+		`UPDATE outbox_events SET "publishedAt" = now(), "claimedUntil" = NULL WHERE "publishedAt" IS NULL`); err != nil {
 		t.Fatalf("clearing outbox: %v", err)
 	}
 }
@@ -187,7 +187,8 @@ func TestOutboxRetryBackoff(t *testing.T) {
 	h.mustSubmit(h.command(view, financial.KindBet, "10.00"))
 
 	sender := &recordingSender{fail: true}
-	publisher := outbox.New(h.store, sender)
+	publisherNow := time.Now().UTC()
+	publisher := outbox.New(h.store, sender, outbox.WithClock(func() time.Time { return publisherNow }))
 	if _, err := publisher.PublishOnce(h.ctx()); err != nil {
 		t.Fatalf("first pass: %v", err)
 	}
@@ -217,7 +218,8 @@ func TestOutboxRetryBackoff(t *testing.T) {
 	if outbox.Backoff(30) != 5*time.Minute {
 		t.Errorf("backoff cap = %s, want 5m", outbox.Backoff(30))
 	}
-	if _, err := adminPool.Exec(h.ctx(), `UPDATE outbox_events SET "nextAttemptAt" = now() - interval '1 second' WHERE "eventId" = $1`, eventID); err != nil {
+	retryAt := publisherNow.Add(-time.Second)
+	if _, err := adminPool.Exec(h.ctx(), `UPDATE outbox_events SET "nextAttemptAt" = $1 WHERE "eventId" = $2`, retryAt, eventID); err != nil {
 		t.Fatalf("forcing a retry: %v", err)
 	}
 	if _, err := publisher.PublishOnce(h.ctx()); err != nil {
@@ -231,7 +233,7 @@ func TestOutboxRetryBackoff(t *testing.T) {
 	}
 
 	sender.setFail(false)
-	if _, err := adminPool.Exec(h.ctx(), `UPDATE outbox_events SET "nextAttemptAt" = now() - interval '1 second' WHERE "eventId" = $1`, eventID); err != nil {
+	if _, err := adminPool.Exec(h.ctx(), `UPDATE outbox_events SET "nextAttemptAt" = $1 WHERE "eventId" = $2`, retryAt, eventID); err != nil {
 		t.Fatalf("forcing the final retry: %v", err)
 	}
 	if _, err := publisher.PublishOnce(h.ctx()); err != nil {
@@ -285,6 +287,82 @@ func TestOutboxRecovery(t *testing.T) {
 		t.Fatalf("publishing recovered events: %v", err)
 	} else if published == 0 {
 		t.Error("recovered events were not published")
+	}
+}
+
+// C147 - A publisher that lost its lease cannot confirm or reschedule a row
+// claimed by a newer publisher.
+func TestOutboxLeaseOwnership(t *testing.T) {
+	h := newHarness(t)
+	clearOutbox(t)
+	view := h.openWallet("1000.00")
+	h.mustSubmit(h.command(view, financial.KindBet, "10.00"))
+
+	base := time.Date(2030, time.January, 1, 12, 0, 0, 0, time.UTC)
+	claimed, err := h.store.ClaimDueEvents(h.ctx(), base, 50, outbox.Lease)
+	if err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	var original application.OutboxRecord
+	for _, record := range claimed {
+		if record.EventType == "WagerTransactionProcessed" {
+			original = record
+			break
+		}
+	}
+	if original.EventID == "" {
+		t.Fatal("first claim returned no processed event")
+	}
+
+	recoveryTime := base.Add(outbox.Lease + time.Second)
+	reclaimed, err := h.store.ClaimDueEvents(h.ctx(), recoveryTime, 50, outbox.Lease)
+	if err != nil {
+		t.Fatalf("recovery claim: %v", err)
+	}
+	var current application.OutboxRecord
+	for _, record := range reclaimed {
+		if record.EventID == original.EventID {
+			current = record
+			break
+		}
+	}
+	if current.EventID == "" {
+		t.Fatal("recovery claim did not reclaim the original event")
+	}
+	if current.Attempts != original.Attempts+1 {
+		t.Fatalf("claim generation = %d, want %d", current.Attempts, original.Attempts+1)
+	}
+
+	if err := h.store.ConfirmEvent(h.ctx(), original.EventID, base, original.Attempts); !errors.Is(err, application.ErrOutboxLeaseLost) {
+		t.Fatalf("stale confirm error = %v, want ErrOutboxLeaseLost", err)
+	}
+	if err := h.store.RescheduleEvent(h.ctx(), original.EventID, base, base.Add(time.Second), original.Attempts); !errors.Is(err, application.ErrOutboxLeaseLost) {
+		t.Fatalf("stale reschedule error = %v, want ErrOutboxLeaseLost", err)
+	}
+
+	var (
+		publishedAt  *time.Time
+		attempts     int
+		claimedUntil *time.Time
+	)
+	if err := adminPool.QueryRow(h.ctx(),
+		`SELECT "publishedAt", "attempts", "claimedUntil" FROM outbox_events WHERE "eventId" = $1`,
+		original.EventID,
+	).Scan(&publishedAt, &attempts, &claimedUntil); err != nil {
+		t.Fatalf("reading ownership state: %v", err)
+	}
+	if publishedAt != nil {
+		t.Fatal("stale publisher confirmed the event")
+	}
+	if attempts != current.Attempts {
+		t.Fatalf("attempts = %d, want current claim generation %d", attempts, current.Attempts)
+	}
+	if claimedUntil == nil || !claimedUntil.Equal(recoveryTime.Add(outbox.Lease)) {
+		t.Fatalf("claimedUntil = %v, want %v", claimedUntil, recoveryTime.Add(outbox.Lease))
+	}
+
+	if err := h.store.ConfirmEvent(h.ctx(), current.EventID, recoveryTime, current.Attempts); err != nil {
+		t.Fatalf("current publisher confirm: %v", err)
 	}
 }
 
@@ -481,7 +559,8 @@ func TestInfrastructureUnavailableRecovery(t *testing.T) {
 	balance := h.walletBalance(view.ID)
 
 	sender := &recordingSender{fail: true}
-	publisher := outbox.New(h.store, sender)
+	publisherNow := time.Now().UTC()
+	publisher := outbox.New(h.store, sender, outbox.WithClock(func() time.Time { return publisherNow }))
 	if _, err := publisher.PublishOnce(h.ctx()); err != nil {
 		t.Fatalf("pass with the broker offline: %v", err)
 	}
@@ -497,7 +576,8 @@ func TestInfrastructureUnavailableRecovery(t *testing.T) {
 	}
 
 	sender.setFail(false)
-	if _, err := adminPool.Exec(h.ctx(), `UPDATE outbox_events SET "nextAttemptAt" = now() - interval '1 second' WHERE "publishedAt" IS NULL`); err != nil {
+	retryAt := publisherNow.Add(-time.Second)
+	if _, err := adminPool.Exec(h.ctx(), `UPDATE outbox_events SET "nextAttemptAt" = $1 WHERE "publishedAt" IS NULL`, retryAt); err != nil {
 		t.Fatalf("forcing retries: %v", err)
 	}
 	if published, err := publisher.PublishOnce(h.ctx()); err != nil {
