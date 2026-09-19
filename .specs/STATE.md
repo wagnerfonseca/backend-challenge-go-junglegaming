@@ -54,8 +54,8 @@
 
 **Feature**: distributed-wager-processing  
 **Where**: batch C landed - Keycloak/OIDC adapter replacing `DenyAll`, internal/provider route policies, wallet/ledger/transaction reads with cursor pagination and reconciliation, Compose stack with health checks and realm import, three-instance/restart/interruption/outbox-race delivery proofs, Portuguese README/ARCHITECTURE/.env.example; all 127 checks green at HEAD including `-race` and `go vet`; only the Verifier remains  
-**In progress**: none - stopping at the batch C boundary  
-**Next step**: dispatch the fresh Verifier over the feature base..HEAD with every check at profile `standard`  
+**In progress**: none - feature verified and complete  
+**Next step**: none - Round 2 scoped re-verification PASS at `f0a51de` (231/231 checks, 0 unproven, 3/3 mutants killed, `validate_verification.py` exit 0)  
 **Blockers**: none  
 **Uncommitted**: none  
 **Branch**: `main`  
